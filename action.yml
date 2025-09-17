@@ -42,30 +42,14 @@ runs:
       shell: bash
       env:
         ACTION_REF: ${{ github.action_ref }} # tag or SHA; empty when caller used a branch (e.g. @main)
-        ACTION_SHA: ${{ github.action_sha }} # always the resolved commit SHA
       run: |
         echo "Installing assignment-pr-creator from GitHub..."
 
-        echo "ACTION_REF: '$ACTION_REF'"
-        echo "ACTION_SHA: '$ACTION_SHA'"
-
-        if [ -n "$ACTION_REF" ]; then
-          REF_FOR_GO="$ACTION_REF"
-          echo "Using action reference: $REF_FOR_GO"
-        elif [ -n "$ACTION_SHA" ]; then
-          REF_FOR_GO="$ACTION_SHA"
-          echo "Using resolved commit: $REF_FOR_GO"
-        else
-          # Last-resort fallback
-          REF_FOR_GO="main"
-          echo "⚠️  No action ref/SHA available; falling back to '$REF_FOR_GO'."
+        if [[ ! "$ACTION_REF" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+          echo "⚠️  Installing from non-release ref ($ACTION_REF). Consider pinning to a release tag for production."
         fi
 
-        if [[ ! "$REF_FOR_GO" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
-          echo "⚠️  Installing from non-release ref ($REF_FOR_GO). Consider pinning to a release tag for production."
-        fi
-
-        go install github.com/majikmate/assignment-pull-request/cmd/assignment-pr-creator@"$REF_FOR_GO"
+        go install github.com/majikmate/assignment-pull-request/cmd/assignment-pr-creator@"$ACTION_REF"
         echo "✅ assignment-pr-creator installed"
 
     - name: Configure Git
