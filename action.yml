@@ -15,6 +15,12 @@ inputs:
     required: false
     default: |
       ^assignments/(assignment-\d+)$
+  hidden-folder-regex:
+    description: List of regular expressions - one per line - to match folder paths that should be hidden.
+    required: false
+    default: |
+      ^.devcontainer$
+      ^.github$
   protected-folder-regex:
     description: List of regular expressions - one per line - to match folder paths that should be protected.
     required: false
@@ -68,6 +74,7 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
         DEFAULT_BRANCH: ${{ inputs.default-branch }}
         ASSIGNMENT_REGEX: ${{ inputs.assignment-regex }}
+        HIDDEN_FOLDER_REGEX: ${{ inputs.hidden-folder-regex }}
         PROTECTED_FOLDER_REGEX: ${{ inputs.protected-folder-regex }}
         DRY_RUN: ${{ inputs.dry-run }}
       run: |
