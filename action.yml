@@ -60,7 +60,7 @@ runs:
           echo "  steps:"
           echo "    - uses: majikmate/assignment-pull-request@v1"
           echo "      with:"
-          echo "        github-token: \${{ secrets.GITHUB_TOKEN }}"
+          echo "        github-token: \${{ github.token }}"
           exit 1
         fi
 
