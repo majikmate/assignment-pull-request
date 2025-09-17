@@ -46,6 +46,9 @@ runs:
       run: |
         echo "Installing assignment-pr-creator from GitHub..."
 
+        echo "ACTION_REF: '$ACTION_REF'"
+        echo "ACTION_SHA: '$ACTION_SHA'"
+
         if [ -n "$ACTION_REF" ]; then
           REF_FOR_GO="$ACTION_REF"
           echo "Using action reference: $REF_FOR_GO"
