@@ -36,6 +36,13 @@ func NewFromCommaSeparated(patterns string) *Processor {
 	return p
 }
 
+// NewFromNewlineSeparated creates a new processor with newline-separated patterns
+func NewFromNewlineSeparated(patterns string) *Processor {
+	p := New()
+	p.AddNewlineSeparated(patterns)
+	return p
+}
+
 // Add adds one or more patterns with automatic deduplication
 func (p *Processor) Add(patterns ...string) {
 	seen := make(map[string]bool)
@@ -55,6 +62,12 @@ func (p *Processor) Add(patterns ...string) {
 // AddCommaSeparated adds comma-separated patterns
 func (p *Processor) AddCommaSeparated(patterns string) {
 	parsed := parseCommaSeparated(patterns)
+	p.Add(parsed...)
+}
+
+// AddNewlineSeparated adds newline-separated patterns
+func (p *Processor) AddNewlineSeparated(patterns string) {
+	parsed := parseNewlineSeparated(patterns)
 	p.Add(parsed...)
 }
 
@@ -108,6 +121,24 @@ func parseCommaSeparated(patterns string) []string {
 			// Restore escaped commas
 			restored := strings.ReplaceAll(trimmed, placeholder, ",")
 			result = append(result, restored)
+		}
+	}
+	return result
+}
+
+// parseNewlineSeparated parses a newline-separated string of regex patterns into a slice
+func parseNewlineSeparated(patterns string) []string {
+	if patterns == "" {
+		return []string{}
+	}
+
+	// Split by newlines and trim whitespace
+	parts := strings.Split(patterns, "\n")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
 		}
 	}
 	return result

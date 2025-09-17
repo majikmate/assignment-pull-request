@@ -47,7 +47,7 @@ func NewConfigFromEnv() *Config {
 		gitHubToken:       os.Getenv(constants.EnvGitHubToken),
 		repositoryName:    os.Getenv(constants.EnvGitHubRepository),
 		defaultBranch:     getEnvWithDefault(constants.EnvDefaultBranch, constants.DefaultBranch),
-		assignmentPattern: regex.NewFromCommaSeparated(getEnvWithDefault(constants.EnvAssignmentRegex, constants.DefaultAssignmentRegex)),
+		assignmentPattern: regex.NewFromNewlineSeparated(getEnvWithDefault(constants.EnvAssignmentRegex, constants.DefaultAssignmentRegex)),
 		dryRun:            isDryRun(getEnvWithDefault(constants.EnvDryRun, constants.DefaultDryRun)),
 	}
 }

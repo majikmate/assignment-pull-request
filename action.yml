@@ -43,7 +43,7 @@ runs:
       env:
         ACTION_REF: ${{ github.action_ref }} # tag or SHA; empty when caller used a branch (e.g. @main)
       run: |
-        echo "Installing assignment-pr-creator from GitHub..."
+        echo "Installing assignment-pr-creator from GitHub with action reference: $ACTION_REF"
 
         if [[ ! "$ACTION_REF" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
           echo "⚠️  Installing from non-release ref ($ACTION_REF). Consider pinning to a release tag for production."

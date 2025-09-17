@@ -153,7 +153,7 @@ func (p *Processor) parseFile(filePath string) error {
 				// Extract assignment patterns
 				if assignmentPatterns, ok := with[constants.WorkflowAssignmentRegexKey]; ok {
 					if assignmentStr, ok := assignmentPatterns.(string); ok {
-						p.assignmentPattern.AddCommaSeparated(assignmentStr)
+						p.assignmentPattern.AddNewlineSeparated(assignmentStr)
 					}
 				}
 			}
@@ -166,21 +166,7 @@ func (p *Processor) parseFile(filePath string) error {
 					// Extract assignment patterns
 					if assignmentPatterns, ok := with[constants.WorkflowAssignmentRegexKey]; ok {
 						if assignmentStr, ok := assignmentPatterns.(string); ok {
-							p.assignmentPattern.AddCommaSeparated(assignmentStr)
-						}
-					}
-				}
-			}
-		}
-
-		// Case 2: Steps within job
-		for _, step := range job.Steps {
-			if p.isAssignmentAction(step.Uses) {
-				if with := step.With; with != nil {
-					// Extract assignment patterns
-					if assignmentPatterns, ok := with[constants.WorkflowAssignmentRegexKey]; ok {
-						if assignmentStr, ok := assignmentPatterns.(string); ok {
-							p.assignmentPattern.AddCommaSeparated(assignmentStr)
+							p.assignmentPattern.AddNewlineSeparated(assignmentStr)
 						}
 					}
 				}
