@@ -44,8 +44,8 @@ runs:
         echo "Installing assignment-pr-creator from GitHub..."
 
         # Use runner-provided env vars (NOT ${{ }})
-        ACTION_REF="$${GITHUB_ACTION_REF:-}"
-        ACTION_SHA="$${GITHUB_ACTION_SHA:-}"
+        ACTION_REF="$GITHUB_ACTION_REF"
+        ACTION_SHA="$GITHUB_ACTION_SHA"
 
         if [ -z "$ACTION_REF" ] && [ -n "$ACTION_SHA" ]; then
           # Caller used a branch (e.g. @main). GitHub gives you the resolved commit.
@@ -56,8 +56,8 @@ runs:
           REF_FOR_GO="$ACTION_REF"
           echo "Using action reference: $REF_FOR_GO"
         else
-          # Extremely rare: both missing. Fail fast with clear error.
-          echo "❌ ERROR: Both GITHUB_ACTION_REF and GITHUB_ACTION_SHA are empty!"
+          # Both missing or empty. Fail fast with clear error.
+          echo "❌ ERROR: Both GITHUB_ACTION_REF and GITHUB_ACTION_SHA are missing or empty!"
           echo "This indicates a problem with the GitHub Actions runner environment."
           echo "Please report this issue to the repository maintainer."
           exit 1
