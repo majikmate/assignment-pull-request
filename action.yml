@@ -42,7 +42,7 @@ runs:
       shell: bash
       env:
         ACTION_REF: ${{ github.action_ref }} # tag or SHA; empty when caller used a branch (e.g. @main)
-        GOPROXY=direct # ensure direct access to GitHub for go install
+        GOPROXY: direct # ensure direct access to GitHub for go install
       run: |
         echo "Installing assignment-pr-creator from GitHub with action reference: $ACTION_REF"
 
