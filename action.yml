@@ -79,7 +79,7 @@ runs:
         PROTECTED_FOLDER_REGEX: ${{ inputs.protected-folder-regex }}
         DRY_RUN: ${{ inputs.dry-run }}
       run: |
-        $GOPATH/bin/assignment-pr-creator
+        $(go env GOPATH)/bin/assignment-pr-creator
 
 branding:
   icon: git-pull-request
