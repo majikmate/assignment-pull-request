@@ -43,24 +43,17 @@ runs:
       run: |
         echo "Installing assignment-pr-creator from GitHub..."
 
-        # Use runner-provided env vars (NOT ${{ }})
-        ACTION_REF="$GITHUB_ACTION_REF"
-        ACTION_SHA="$GITHUB_ACTION_SHA"
-
-        if [ -z "$ACTION_REF" ] && [ -n "$ACTION_SHA" ]; then
-          # Caller used a branch (e.g. @main). GitHub gives you the resolved commit.
-          REF_FOR_GO="$ACTION_SHA"
-          echo "Using resolved commit for go install: $REF_FOR_GO (branch ref was used)"
-        elif [ -n "$ACTION_REF" ]; then
-          # Caller used a tag or explicit SHA
-          REF_FOR_GO="$ACTION_REF"
+        # Check if environment variables are available
+        if [ -n "$GITHUB_ACTION_REF" ]; then
+          REF_FOR_GO="$GITHUB_ACTION_REF"
           echo "Using action reference: $REF_FOR_GO"
+        elif [ -n "$GITHUB_ACTION_SHA" ]; then
+          REF_FOR_GO="$GITHUB_ACTION_SHA"
+          echo "Using resolved commit: $REF_FOR_GO"
         else
-          # Both missing or empty. Fail fast with clear error.
-          echo "❌ ERROR: Both GITHUB_ACTION_REF and GITHUB_ACTION_SHA are missing or empty!"
-          echo "This indicates a problem with the GitHub Actions runner environment."
-          echo "Please report this issue to the repository maintainer."
-          exit 1
+          # Fallback to main if neither is available
+          REF_FOR_GO="main"
+          echo "⚠️  No action ref/SHA available, using fallback: $REF_FOR_GO"
         fi
 
         if [[ ! "$REF_FOR_GO" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
