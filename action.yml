@@ -1,0 +1,100 @@
+name: Assignment Pull Request Creator
+description: Scans for assignment folders and creates a pull request for each assignment. Supports dry-run mode to simulate operations without making changes.
+author: majikmate
+
+inputs:
+  github-token:
+    description: GitHub token for API access
+    required: true
+  default-branch:
+    description: Default branch to create pull requests against
+    required: false
+    default: main
+  assignment-regex:
+    description: List of regular expressions - one per line - to match assignment paths and extract branch names using capturing groups. Use (?P<name>...) for named groups or (...) for unnamed groups. Named groups take priority when both are present.
+    required: false
+    default: |
+      ^assignments/(assignment-\d+)$
+  protected-folder-regex:
+    description: List of regular expressions - one per line - to match folder paths that should be protected.
+    required: false
+    default: |
+      ^.devcontainer$
+      ^.github$
+      ^tutorials$
+  dry-run:
+    description: Simulate operations without actually creating branches or pull requests
+    required: false
+    default: "false"
+
+outputs:
+  created-branches:
+    description: List of branches created
+    value: ${{ steps.create-assignments.outputs.created-branches }}
+  created-pull-requests:
+    description: List of pull requests created
+    value: ${{ steps.create-assignments.outputs.created-pull-requests }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install assignment-pr-creator
+      shell: bash
+      run: |
+        echo "Installing assignment-pr-creator from GitHub..."
+
+        # Extract the version from the action reference
+        ACTION_REF="${{ github.action_ref }}"
+
+        # Require explicit version reference
+        if [ -z "$ACTION_REF" ] || [ "$ACTION_REF" = "" ]; then
+          echo "❌ ERROR: No action reference specified!"
+          echo "This action requires an explicit version reference."
+          echo ""
+          echo "Please use one of:"
+          echo "  - uses: majikmate/assignment-pull-request@v1        # Latest v1.x.x"
+          echo "  - uses: majikmate/assignment-pull-request@v1.2.3    # Specific version"
+          echo "  - uses: majikmate/assignment-pull-request@main      # Development branch"
+          echo ""
+          echo "Example:"
+          echo "  steps:"
+          echo "    - uses: majikmate/assignment-pull-request@v1"
+          echo "      with:"
+          echo "        github-token: \${{ secrets.GITHUB_TOKEN }}"
+          exit 1
+        fi
+
+        echo "Using action reference version: $ACTION_REF"
+
+        # Check if this is a development/non-release reference
+        if [[ ! "$ACTION_REF" =~ ^v[0-9]+(\.[0-9]+)*$ ]] && [ "$ACTION_REF" != "latest" ]; then
+          echo "⚠️  WARNING: Using non-release reference '$ACTION_REF'."
+          echo "    Consider pinning to a release version for production (e.g., @v1, @v1.2.3, @latest)."
+        fi
+
+        go install github.com/majikmate/assignment-pull-request/cmd/assignment-pr-creator@$ACTION_REF
+        echo "✅ assignment-pr-creator installed from GitHub"
+
+    - name: Configure Git
+      shell: bash
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Run assignment-pr-creator
+      id: create-assignments
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        DEFAULT_BRANCH: ${{ inputs.default-branch }}
+        ASSIGNMENT_REGEX: ${{ inputs.assignment-regex }}
+        PROTECTED_FOLDER_REGEX: ${{ inputs.protected-folder-regex }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        assignment-pr-creator
+
+branding:
+  icon: git-pull-request
+  color: blue

@@ -1,0 +1,30 @@
+<svg width="200" height="150" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="200" height="150" fill="#f0f0f0" stroke="#333" stroke-width="2"/>
+  
+  <!-- Title -->
+  <text x="100" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#333">
+    Fibonacci Sequence
+  </text>
+  
+  <!-- Fibonacci rectangles with golden ratio -->
+  <rect x="20" y="40" width="21" height="21" fill="#ff6b6b" stroke="#333"/>
+  <text x="30" y="75" text-anchor="middle" font-size="10" fill="#333">1</text>
+  
+  <rect x="41" y="40" width="21" height="21" fill="#4ecdc4" stroke="#333"/>
+  <text x="51" y="75" text-anchor="middle" font-size="10" fill="#333">1</text>
+  
+  <rect x="62" y="40" width="34" height="34" fill="#45b7d1" stroke="#333"/>
+  <text x="79" y="85" text-anchor="middle" font-size="10" fill="#333">2</text>
+  
+  <rect x="96" y="40" width="55" height="55" fill="#96ceb4" stroke="#333"/>
+  <text x="123" y="90" text-anchor="middle" font-size="12" fill="#333">3</text>
+  
+  <rect x="151" y="40" width="34" height="89" fill="#ffeaa7" stroke="#333"/>
+  <text x="168" y="110" text-anchor="middle" font-size="12" fill="#333">5</text>
+  
+  <!-- Formula -->
+  <text x="100" y="140" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#666">
+    F(n) = F(n-1) + F(n-2)
+  </text>
+</svg>

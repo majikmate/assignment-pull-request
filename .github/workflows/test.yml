@@ -1,0 +1,85 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Run sanity checks
+        run: make check-ci
+
+  test-cross-platform:
+    name: Cross-Platform Testing
+    runs-on: ${{ matrix.os }}
+    needs: test-quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: Linux
+          - os: windows-latest
+            platform: Windows
+          - os: macos-latest
+            platform: macOS
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests (${{ matrix.platform }})
+        run: make test
+
+      - name: Test action with dry-run (${{ matrix.platform }})
+        uses: majikmate/assignment-pull-request@main
+        with:
+          github-token: fake-token
+          assignment-regex: >
+            ^test/fixtures/assignments/(assignment-[\d]+)$,
+            ^test/fixtures/bootcamp/(.+/assignment-[\w\-]+)$,
+            ^test/fixtures/courses/(.+/assignment-[\w\-]+)$,
+            ^test/fixtures/homework/(hw-[\d]+)$,
+            ^test/fixtures/homework/(lab-[\d]+)$,
+          default-branch: main
+          dry-run: "yes"
