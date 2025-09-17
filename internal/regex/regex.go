@@ -91,27 +91,19 @@ func (p *Processor) compile() error {
 // parseNewlineSeparated parses a newline-separated string of regex patterns into a slice
 func parseNewlineSeparated(patterns string) []string {
 	if patterns == "" {
-		fmt.Printf("DEBUG: parseNewlineSeparated called with empty patterns\n")
 		return []string{}
 	}
 
-	fmt.Printf("DEBUG: parseNewlineSeparated called with patterns: %q\n", patterns)
-
 	// Split by newlines and trim whitespace
 	parts := strings.Split(patterns, "\n")
-	fmt.Printf("DEBUG: split into %d parts: %v\n", len(parts), parts)
 
 	result := make([]string, 0, len(parts))
-	for i, part := range parts {
+	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
 		if trimmed != "" {
-			fmt.Printf("DEBUG: adding pattern[%d]: %q\n", i, trimmed)
 			result = append(result, trimmed)
-		} else {
-			fmt.Printf("DEBUG: skipping empty pattern[%d]: %q\n", i, part)
 		}
 	}
 
-	fmt.Printf("DEBUG: parseNewlineSeparated returning %d patterns: %v\n", len(result), result)
 	return result
 }
