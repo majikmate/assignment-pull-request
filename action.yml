@@ -75,7 +75,9 @@ runs:
         fi
 
         go install github.com/majikmate/assignment-pull-request/cmd/assignment-pr-creator@"$REF_FOR_GO"
-        echo "✅ assignment-pr-creator installed"    - name: Configure Git
+        echo "✅ assignment-pr-creator installed"
+
+    - name: Configure Git
       shell: bash
       run: |
         git config --global user.name "github-actions[bot]"
