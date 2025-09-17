@@ -29,13 +29,6 @@ func NewWithPatterns(patterns []string) *Processor {
 	return p
 }
 
-// NewFromCommaSeparated creates a new processor with comma-separated patterns
-func NewFromCommaSeparated(patterns string) *Processor {
-	p := New()
-	p.AddCommaSeparated(patterns)
-	return p
-}
-
 // NewFromNewlineSeparated creates a new processor with newline-separated patterns
 func NewFromNewlineSeparated(patterns string) *Processor {
 	p := New()
@@ -57,12 +50,6 @@ func (p *Processor) Add(patterns ...string) {
 			p.dirty = true
 		}
 	}
-}
-
-// AddCommaSeparated adds comma-separated patterns
-func (p *Processor) AddCommaSeparated(patterns string) {
-	parsed := parseCommaSeparated(patterns)
-	p.Add(parsed...)
 }
 
 // AddNewlineSeparated adds newline-separated patterns
@@ -101,45 +88,30 @@ func (p *Processor) compile() error {
 	return nil
 }
 
-// parseCommaSeparated parses a comma-separated string of regex patterns into a slice
-// Supports escaping commas with \, to allow commas within regex patterns
-func parseCommaSeparated(patterns string) []string {
-	if patterns == "" {
-		return []string{}
-	}
-
-	// Replace escaped commas with a placeholder to preserve them
-	placeholder := "\x00ESCAPED_COMMA\x00"
-	patterns = strings.ReplaceAll(patterns, "\\,", placeholder)
-
-	// Split by unescaped commas and trim whitespace
-	parts := strings.Split(patterns, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			// Restore escaped commas
-			restored := strings.ReplaceAll(trimmed, placeholder, ",")
-			result = append(result, restored)
-		}
-	}
-	return result
-}
-
 // parseNewlineSeparated parses a newline-separated string of regex patterns into a slice
 func parseNewlineSeparated(patterns string) []string {
 	if patterns == "" {
+		fmt.Printf("DEBUG: parseNewlineSeparated called with empty patterns\n")
 		return []string{}
 	}
 
+	fmt.Printf("DEBUG: parseNewlineSeparated called with patterns: %q\n", patterns)
+
 	// Split by newlines and trim whitespace
 	parts := strings.Split(patterns, "\n")
+	fmt.Printf("DEBUG: split into %d parts: %v\n", len(parts), parts)
+
 	result := make([]string, 0, len(parts))
-	for _, part := range parts {
+	for i, part := range parts {
 		trimmed := strings.TrimSpace(part)
 		if trimmed != "" {
+			fmt.Printf("DEBUG: adding pattern[%d]: %q\n", i, trimmed)
 			result = append(result, trimmed)
+		} else {
+			fmt.Printf("DEBUG: skipping empty pattern[%d]: %q\n", i, part)
 		}
 	}
+
+	fmt.Printf("DEBUG: parseNewlineSeparated returning %d patterns: %v\n", len(result), result)
 	return result
 }
