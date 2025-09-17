@@ -44,20 +44,13 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: ${{ github.action_path }}/go.mod
-        cache: true
-
     - name: Install assignment-pr-creator
       shell: bash
       run: |
         echo "Building assignment-pr-creator from action source at $GITHUB_ACTION_PATH"
 
         go version
-        cd "$GITHUB_ACTION_PATH"
-        go install ./cmd/assignment-pr-creator
+        go install $GITHUB_ACTION_PATH/cmd/assignment-pr-creator
         echo "✅ assignment-pr-creator built and installed from action source"
 
     - name: Configure Git
