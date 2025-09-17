@@ -44,8 +44,8 @@ runs:
         echo "Installing assignment-pr-creator from GitHub..."
 
         # Use runner-provided env vars (NOT ${{ }})
-        ACTION_REF="${GITHUB_ACTION_REF:-}"
-        ACTION_SHA="${GITHUB_ACTION_SHA:-}"
+        ACTION_REF="$${GITHUB_ACTION_REF:-}"
+        ACTION_SHA="$${GITHUB_ACTION_SHA:-}"
 
         if [ -z "$ACTION_REF" ] && [ -n "$ACTION_SHA" ]; then
           # Caller used a branch (e.g. @main). GitHub gives you the resolved commit.
