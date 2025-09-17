@@ -43,37 +43,27 @@ runs:
       run: |
         echo "Installing assignment-pr-creator from GitHub..."
 
-        # Extract the version from the action reference
         ACTION_REF="${{ github.action_ref }}"
+        ACTION_SHA="${{ github.action_sha }}"
 
-        # Require explicit version reference
-        if [ -z "$ACTION_REF" ] || [ "$ACTION_REF" = "" ]; then
-          echo "❌ ERROR: No action reference specified!"
-          echo "This action requires an explicit version reference."
-          echo ""
-          echo "Please use one of:"
-          echo "  - uses: majikmate/assignment-pull-request@v1        # Latest v1.x.x"
-          echo "  - uses: majikmate/assignment-pull-request@v1.2.3    # Specific version"
-          echo "  - uses: majikmate/assignment-pull-request@main      # Development branch"
-          echo ""
-          echo "Example:"
-          echo "  steps:"
-          echo "    - uses: majikmate/assignment-pull-request@v1"
-          echo "      with:"
-          echo "        github-token: \${{ github.token }}"
-          exit 1
+        # Decide what to pass to `go install`
+        if [ -z "$ACTION_REF" ]; then
+          # The action was called with a branch (e.g. @main). Use the resolved commit.
+          REF_FOR_GO="$ACTION_SHA"
+          echo "Using resolved commit for go install: $REF_FOR_GO (branch ref was used)"
+        else
+          # The action was called with a tag or explicit SHA.
+          REF_FOR_GO="$ACTION_REF"
+          echo "Using action reference: $REF_FOR_GO"
         fi
 
-        echo "Using action reference version: $ACTION_REF"
-
-        # Check if this is a development/non-release reference
-        if [[ ! "$ACTION_REF" =~ ^v[0-9]+(\.[0-9]+)*$ ]] && [ "$ACTION_REF" != "latest" ]; then
-          echo "⚠️  WARNING: Using non-release reference '$ACTION_REF'."
-          echo "    Consider pinning to a release version for production (e.g., @v1, @v1.2.3, @latest)."
+        # Optional: warn if not installing from a release tag
+        if [[ ! "$REF_FOR_GO" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+          echo "⚠️  Installing from non-release ref ($REF_FOR_GO). Consider pinning to a release tag for production."
         fi
 
-        go install github.com/majikmate/assignment-pull-request/cmd/assignment-pr-creator@$ACTION_REF
-        echo "✅ assignment-pr-creator installed from GitHub"
+        go install github.com/majikmate/assignment-pull-request/cmd/assignment-pr-creator@"$REF_FOR_GO"
+        echo "✅ assignment-pr-creator installed"
 
     - name: Configure Git
       shell: bash
