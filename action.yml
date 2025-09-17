@@ -43,12 +43,31 @@ runs:
       run: |
         echo "Installing assignment-pr-creator from GitHub..."
 
-        # resolve commit from the on-disk action checkout
+        # Debug: show available environment variables
+        echo "DEBUG: GITHUB_ACTION_REF='$GITHUB_ACTION_REF'"
+        echo "DEBUG: GITHUB_ACTION_PATH='$GITHUB_ACTION_PATH'"
+
+        # Prefer the explicit ref if present (tags/SHAs show up here)
+        if [ -n "$GITHUB_ACTION_REF" ] && [ "$GITHUB_ACTION_REF" != "" ]; then
+          REF_FOR_GO="$GITHUB_ACTION_REF"
+          echo "Using action reference: $REF_FOR_GO"
+        fi
+
+        # If no ref, try the resolved commit from the on-disk action checkout
         if [ -z "$REF_FOR_GO" ] && [ -n "$GITHUB_ACTION_PATH" ]; then
+          echo "DEBUG: Attempting to resolve SHA from $GITHUB_ACTION_PATH"
           if ACTUAL_SHA=$(git -C "$GITHUB_ACTION_PATH" rev-parse HEAD 2>/dev/null); then
             REF_FOR_GO="$ACTUAL_SHA"
             echo "Using resolved commit from action checkout: $REF_FOR_GO"
+          else
+            echo "DEBUG: git rev-parse failed"
           fi
+        fi
+
+        # Final fallback (non-reproducible but workable)
+        if [ -z "$REF_FOR_GO" ]; then
+          REF_FOR_GO="main"
+          echo "⚠️  No ref/SHA available; falling back to '$REF_FOR_GO'."
         fi
 
         if [[ ! "$REF_FOR_GO" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
@@ -56,9 +75,7 @@ runs:
         fi
 
         go install github.com/majikmate/assignment-pull-request/cmd/assignment-pr-creator@"$REF_FOR_GO"
-        echo "✅ assignment-pr-creator installed"
-
-    - name: Configure Git
+        echo "✅ assignment-pr-creator installed"    - name: Configure Git
       shell: bash
       run: |
         git config --global user.name "github-actions[bot]"
