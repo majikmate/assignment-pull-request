@@ -50,7 +50,8 @@ runs:
         echo "Building assignment-pr-creator from action source at $GITHUB_ACTION_PATH"
 
         go version
-        go install $GITHUB_ACTION_PATH/cmd/assignment-pr-creator
+        cd "$GITHUB_ACTION_PATH"
+        go install ./cmd/assignment-pr-creator
         echo "✅ assignment-pr-creator built and installed from action source"
 
     - name: Configure Git
