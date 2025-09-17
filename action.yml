@@ -56,11 +56,11 @@ runs:
           REF_FOR_GO="$ACTION_REF"
           echo "Using action reference: $REF_FOR_GO"
         else
-          # Extremely rare: both missing. Pick a sensible fallback *or* fail fast.
-          # If you always publish from main, you could default to main:
-          REF_FOR_GO="main"
-          echo "⚠️  Both GITHUB_ACTION_REF and GITHUB_ACTION_SHA are empty; defaulting to '$REF_FOR_GO'."
-          # Or: echo "No action ref available"; exit 1
+          # Extremely rare: both missing. Fail fast with clear error.
+          echo "❌ ERROR: Both GITHUB_ACTION_REF and GITHUB_ACTION_SHA are empty!"
+          echo "This indicates a problem with the GitHub Actions runner environment."
+          echo "Please report this issue to the repository maintainer."
+          exit 1
         fi
 
         if [[ ! "$REF_FOR_GO" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
