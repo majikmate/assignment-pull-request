@@ -44,12 +44,6 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: go.mod
-        cache: true
-
     - name: Install assignment-pr-creator
       shell: bash
       env:
@@ -62,6 +56,7 @@ runs:
           echo "⚠️  Installing from non-release ref ($ACTION_REF). Consider pinning to a release tag for production."
         fi
 
+        go version
         go install github.com/majikmate/assignment-pull-request/cmd/assignment-pr-creator@"$ACTION_REF"
         echo "✅ assignment-pr-creator installed"
 
@@ -84,7 +79,7 @@ runs:
         PROTECTED_FOLDER_REGEX: ${{ inputs.protected-folder-regex }}
         DRY_RUN: ${{ inputs.dry-run }}
       run: |
-        assignment-pr-creator
+        $GOPATH/bin/assignment-pr-creator
 
 branding:
   icon: git-pull-request
