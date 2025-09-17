@@ -44,8 +44,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Setup Go
-      uses: actions/setup-go@v5
+    - name: Set up Go
+      uses: actions/setup-go@v6
       with:
         go-version-file: ${{ github.action_path }}/go.mod
         cache: true
