@@ -134,11 +134,11 @@ jobs:
         uses: majikmate/assignment-pull-request@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          assignment-regex: >
-            ^test/fixtures/assignments/(assignment-[\d]+)$,
-            ^test/fixtures/homework/(hw-[\d]+)$,
-            ^test/fixtures/labs/(lab-[\d]+)$,
-            ^test/fixtures/bootcamp/(.+/assignment-[\w\-]+)$,
+          assignment-regex: |
+            ^test/fixtures/assignments/(assignment-[\d]+)$
+            ^test/fixtures/homework/(hw-[\d]+)$
+            ^test/fixtures/labs/(lab-[\d]+)$
+            ^test/fixtures/bootcamp/(.+/assignment-[\w\-]+)$
             ^test/fixtures/courses/(.+/assignment-[\w\-]+)$
           default-branch: main
           dry-run: "no"
