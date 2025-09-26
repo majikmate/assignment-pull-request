@@ -70,4 +70,7 @@ var FilteredFolders = []string{".git", ".github", ".devcontainer"}
 const (
 	// WorkflowAssignmentRegexKey is the YAML key for assignment regex patterns
 	WorkflowAssignmentRegexKey = "assignment-regex"
+	
+	// WorkflowProtectedFolderRegexKey is the YAML key for protected folder regex patterns
+	WorkflowProtectedFolderRegexKey = "protected-folder-regex"
 )

@@ -35,18 +35,25 @@ type Step struct {
 // Processor handles workflow file parsing and pattern extraction
 type Processor struct {
 	assignmentPattern *regex.Processor
+	protectedFoldersPattern *regex.Processor
 }
 
 // New creates a new workflow processor
 func New() *Processor {
 	return &Processor{
 		assignmentPattern: regex.New(),
+		protectedFoldersPattern: regex.New(),
 	}
 }
 
 // AssignmentPattern returns the regex processor for assignment patterns
 func (p *Processor) AssignmentPattern() *regex.Processor {
 	return p.assignmentPattern
+}
+
+// ProtectedFoldersPattern returns the regex processor for protected folders patterns
+func (p *Processor) ProtectedFoldersPattern() *regex.Processor {
+	return p.protectedFoldersPattern
 }
 
 // ParseAllFiles finds and parses all workflow files
@@ -156,6 +163,13 @@ func (p *Processor) parseFile(filePath string) error {
 						p.assignmentPattern.AddNewlineSeparated(assignmentStr)
 					}
 				}
+				
+				// Extract protected folder patterns
+				if protectedPatterns, ok := with[constants.WorkflowProtectedFolderRegexKey]; ok {
+					if protectedStr, ok := protectedPatterns.(string); ok {
+						p.protectedFoldersPattern.AddNewlineSeparated(protectedStr)
+					}
+				}
 			}
 		}
 
@@ -167,6 +181,13 @@ func (p *Processor) parseFile(filePath string) error {
 					if assignmentPatterns, ok := with[constants.WorkflowAssignmentRegexKey]; ok {
 						if assignmentStr, ok := assignmentPatterns.(string); ok {
 							p.assignmentPattern.AddNewlineSeparated(assignmentStr)
+						}
+					}
+					
+					// Extract protected folder patterns
+					if protectedPatterns, ok := with[constants.WorkflowProtectedFolderRegexKey]; ok {
+						if protectedStr, ok := protectedPatterns.(string); ok {
+							p.protectedFoldersPattern.AddNewlineSeparated(protectedStr)
 						}
 					}
 				}
