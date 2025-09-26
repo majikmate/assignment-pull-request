@@ -285,7 +285,7 @@ func (p *Processor) ProtectFolders(protectedFoldersPattern *regex.Processor) err
 		fmt.Printf("  Setting ownership for: %s\n", folderPath)
 		
 		// Run chown command recursively
-		cmd := exec.Command("chown", "-R", "prot:prot", folderPath)
+		cmd := exec.Command("sudo", "chown", "-R", "prot:prot", folderPath)
 		output, err := cmd.CombinedOutput()
 		
 		if err != nil {
