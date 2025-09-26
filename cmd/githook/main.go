@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/majikmate/assignment-pull-request/internal/checkout"
+	"github.com/majikmate/assignment-pull-request/internal/workflow"
 )
 
 func main() {
@@ -27,10 +28,41 @@ func main() {
 		return
 	}
 
-	// Create sparse checkout processor and configure sparse-checkout
-	checkoutProcessor := checkout.New(repositoryRoot)
-	err = checkoutProcessor.SparseCheckout()
+	// Parse workflow files to find assignment and protected folder configurations
+	log.Printf("Parsing workflow files for patterns...")
+	workflowProcessor := workflow.New()
+	err = workflowProcessor.ParseAllFiles()
 	if err != nil {
-		log.Printf("Failed to configure sparse checkout: %v", err)
+		log.Printf("Failed to parse workflow files: %v", err)
+		return // Don't continue if workflow parsing fails
+	}
+
+	// Get pattern processors from workflow
+	assignmentPattern := workflowProcessor.AssignmentPattern()
+	protectedFoldersPattern := workflowProcessor.ProtectedFoldersPattern()
+
+	// Create sparse checkout processor
+	checkoutProcessor := checkout.New(repositoryRoot)
+
+	// Configure sparse-checkout with assignment patterns
+	if len(assignmentPattern.Patterns()) > 0 {
+		log.Printf("Configuring sparse checkout with assignment patterns...")
+		err = checkoutProcessor.SparseCheckout(assignmentPattern)
+		if err != nil {
+			log.Printf("Failed to configure sparse checkout: %v", err)
+		}
+	} else {
+		log.Printf("No assignment patterns found, skipping sparse-checkout configuration")
+	}
+
+	// Protect folders with protected folder patterns
+	if len(protectedFoldersPattern.Patterns()) > 0 {
+		log.Printf("Protecting folders with protected folder patterns...")
+		err = checkoutProcessor.ProtectFolders(protectedFoldersPattern)
+		if err != nil {
+			log.Printf("Failed to protect folders: %v", err)
+		}
+	} else {
+		log.Printf("No protected folder patterns found, skipping folder protection")
 	}
 }

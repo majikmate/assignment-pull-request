@@ -3,6 +3,7 @@ package checkout
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -10,7 +11,7 @@ import (
 	"github.com/majikmate/assignment-pull-request/internal/assignment"
 	"github.com/majikmate/assignment-pull-request/internal/constants"
 	"github.com/majikmate/assignment-pull-request/internal/git"
-	"github.com/majikmate/assignment-pull-request/internal/workflow"
+	"github.com/majikmate/assignment-pull-request/internal/regex"
 )
 
 // Processor handles Git sparse-checkout configuration based on assignment patterns
@@ -36,51 +37,34 @@ func NewWithGitOps(repositoryRoot string, gitOps *git.Operations) *Processor {
 }
 
 // SparseCheckout configures Git sparse-checkout for assignments matching the current branch
-// Automatically discovers workflow patterns, finds matching assignments, and sets up sparse-checkout
-// to include all non-assignment root folders plus only the assignment folders that match the current branch
-func (p *Processor) SparseCheckout() error {
+// Takes assignment patterns as a parameter and sets up sparse-checkout to include all non-assignment 
+// root folders plus only the assignment folders that match the current branch
+func (p *Processor) SparseCheckout(assignmentPattern *regex.Processor) error {
 	fmt.Printf("🔍 Starting sparse-checkout configuration...\n")
 
 	// Check if git is initialized
-
 	if _, err := os.Stat(filepath.Join(p.repositoryRoot, ".git")); os.IsNotExist(err) {
 		return nil
 	}
 
-	// Print current working directory before change
-	// ...existing code...
-
 	// Disable sparse-checkout at the very beginning to reset state
-
 	if err := p.gitOps.DisableSparseCheckout(); err != nil {
 		// Ignore error if sparse-checkout wasn't enabled
 		fmt.Printf("Warning: could not disable sparse-checkout (may not be enabled): %v\n", err)
 	}
 
-	// Parse workflow files to find assignment configurations
-
-	workflowProcessor := workflow.New()
-	err := workflowProcessor.ParseAllFiles()
-	if err != nil {
-		fmt.Printf("Failed to parse workflow files: %v\n", err)
-		return nil // Don't fail, just skip sparse-checkout configuration
+	// Validate assignment patterns
+	if assignmentPattern == nil || len(assignmentPattern.Patterns()) == 0 {
+		fmt.Println("No assignment patterns provided, skipping sparse-checkout configuration")
+		return nil
 	}
 
-	// Get pattern processors from workflow
-	assignmentPattern := workflowProcessor.AssignmentPattern()
-
+	fmt.Printf("Using %d assignment pattern(s):\n", len(assignmentPattern.Patterns()))
 	for i, pattern := range assignmentPattern.Patterns() {
 		fmt.Printf("  Pattern %d: %s\n", i+1, pattern)
 	}
 
-	// Skip operations if no patterns found
-	if len(assignmentPattern.Patterns()) == 0 {
-		fmt.Println("No assignment patterns found in workflow files, skipping sparse-checkout configuration")
-		return nil
-	}
-
 	// Create assignment processor
-
 	assignmentProcessor, err := assignment.NewProcessor(p.repositoryRoot, assignmentPattern)
 	if err != nil {
 		return fmt.Errorf("failed to create assignment processor: %w", err)
@@ -223,4 +207,98 @@ func (p *Processor) scanRepositoryRootFolders() ([]string, error) {
 // isFilteredFolder returns true if the folder should be filtered out from sparse-checkout
 func isFilteredFolder(folderName string) bool {
 	return slices.Contains(constants.FilteredFolders, folderName)
+}
+
+// ProtectFolders scans for folders matching protected folder regex patterns and sets their ownership to user:prot group:prot recursively
+func (p *Processor) ProtectFolders(protectedFoldersPattern *regex.Processor) error {
+	fmt.Printf("🔒 Starting folder protection...\n")
+
+	// Get compiled patterns
+	protectedPatterns, err := protectedFoldersPattern.Compiled()
+	if err != nil {
+		return fmt.Errorf("failed to compile protected folder patterns: %w", err)
+	}
+
+	if len(protectedPatterns) == 0 {
+		fmt.Println("No protected folder patterns found, skipping folder protection")
+		return nil
+	}
+
+	fmt.Printf("Using %d protected folder pattern(s):\n", len(protectedPatterns))
+	for i, pattern := range protectedFoldersPattern.Patterns() {
+		fmt.Printf("  Pattern %d: %s\n", i+1, pattern)
+	}
+
+	var protectedFolders []string
+
+	// Walk the repository root to find matching folders
+	err = filepath.Walk(p.repositoryRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Only process directories
+		if !info.IsDir() {
+			return nil
+		}
+
+		// Skip the root directory itself
+		if path == p.repositoryRoot {
+			return nil
+		}
+
+		// Convert absolute path to relative path from repository root
+		relativePath, err := filepath.Rel(p.repositoryRoot, path)
+		if err != nil {
+			fmt.Printf("Warning: could not make path relative: %s\n", path)
+			return nil
+		}
+
+		// Normalize path to use forward slashes for pattern matching
+		normalizedPath := filepath.ToSlash(relativePath)
+
+		// Check against protected folder patterns
+		for _, pattern := range protectedPatterns {
+			if pattern.MatchString(normalizedPath) {
+				protectedFolders = append(protectedFolders, path)
+				fmt.Printf("  Found protected folder: %s\n", normalizedPath)
+				break // Don't check other patterns for this path
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("error scanning for protected folders: %w", err)
+	}
+
+	if len(protectedFolders) == 0 {
+		fmt.Println("No folders match protected patterns")
+		return nil
+	}
+
+	fmt.Printf("Protecting %d folder(s)...\n", len(protectedFolders))
+
+	// Change ownership of each protected folder recursively
+	for _, folderPath := range protectedFolders {
+		fmt.Printf("  Setting ownership for: %s\n", folderPath)
+		
+		// Run chown command recursively
+		cmd := exec.Command("chown", "-R", "prot:prot", folderPath)
+		output, err := cmd.CombinedOutput()
+		
+		if err != nil {
+			fmt.Printf("    Warning: failed to change ownership of %s: %v\n", folderPath, err)
+			if len(output) > 0 {
+				fmt.Printf("    Output: %s\n", strings.TrimSpace(string(output)))
+			}
+			continue // Continue with other folders even if one fails
+		}
+		
+		fmt.Printf("    ✅ Successfully protected: %s\n", folderPath)
+	}
+
+	fmt.Printf("✅ Folder protection completed for %d folder(s)\n", len(protectedFolders))
+	return nil
 }
