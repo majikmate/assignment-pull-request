@@ -42,12 +42,12 @@ func main() {
 	assignmentPattern := workflowProcessor.AssignmentPattern()
 	protectedFoldersPattern := workflowProcessor.ProtectedFoldersPattern()
 
-	// Create sparse checkout processor
-	checkoutProcessor := checkout.New(repositoryRoot)
-
 	// Configure sparse-checkout with assignment patterns
 	if len(assignmentPattern.Patterns()) > 0 {
 		log.Printf("Configuring sparse checkout with assignment patterns...")
+		
+		// Create sparse checkout processor
+		checkoutProcessor := checkout.New(repositoryRoot)
 		err = checkoutProcessor.SparseCheckout(assignmentPattern)
 		if err != nil {
 			log.Printf("Failed to configure sparse checkout: %v", err)
