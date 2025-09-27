@@ -71,6 +71,6 @@ const (
 	// WorkflowAssignmentRegexKey is the YAML key for assignment regex patterns
 	WorkflowAssignmentRegexKey = "assignment-regex"
 	
-	// WorkflowProtectedFolderRegexKey is the YAML key for protected folder regex patterns
-	WorkflowProtectedFolderRegexKey = "protected-folder-regex"
+	// WorkflowProtectedPathsRegexKey is the YAML key for protected paths regex patterns
+	WorkflowProtectedPathsRegexKey = "protected-paths-regex"
 )

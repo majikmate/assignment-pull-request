@@ -1,6 +1,6 @@
 # Protected Paths (Git) - DevContainer Feature
 
-A DevContainer feature that enforces root-owned protected folders and
+A DevContainer feature that enforces root-owned protected paths and
 assignment-based sparse checkout via global git hooks. Automatically configures
 based on workflow YAML files in the repository.
 
@@ -34,7 +34,7 @@ Add this feature to your `.devcontainer/devcontainer.json`:
 1. **Global Git Hooks**: Installs hooks at `/etc/git/hooks` that trigger on git
    operations
 2. **Dynamic Configuration**: Reads `assignment-regex` and
-   `protected-folder-regex` from workflow YAML files
+   `protected-paths-regex` from workflow YAML files
 3. **Sparse Checkout**: For `post-checkout` with branch changes, configures
    sparse-checkout to show only relevant assignment folders
 4. **Path Protection**: For all working-tree-modifying hooks, synchronizes
@@ -48,7 +48,7 @@ No manual configuration required! The feature automatically:
 
 - Reads regex patterns from your repository's workflow YAML files
 - Looks for `assignment-regex` patterns to determine assignment folders
-- Looks for `protected-folder-regex` patterns to determine protected paths
+- Looks for `protected-paths-regex` patterns to determine protected paths
 - Configures appropriate permissions and ownership
 
 ## Example Workflow Configuration
@@ -64,7 +64,7 @@ jobs:
             assignment-regex: |
                 test/fixtures/(?P<category>[^/]+)/(?P<number>\d+)-(?P<name>[^/]+)/README\.md$
                 assignments/(?P<semester>[^/]+)/(?P<module>[^/]+)/(?P<assignment>[^/]+)/README\.md$
-            protected-folder-regex: |
+            protected-paths-regex: |
                 ^test/fixtures/
                 ^\.github/
 ```

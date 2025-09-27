@@ -20,7 +20,7 @@ func main() {
 
 	log.Printf("Processing %s hook in repository: %s", hookType, repositoryRoot)
 
-	// Parse workflow files to find assignment and protected folder configurations
+	// Parse workflow files to find assignment and protected paths configurations
 	log.Printf("Parsing workflow files for patterns...")
 	workflowProcessor := workflow.New()
 	err = workflowProcessor.ParseAllFiles()
@@ -31,7 +31,7 @@ func main() {
 
 	// Get pattern processors from workflow
 	assignmentPattern := workflowProcessor.AssignmentPattern()
-	protectedFoldersPattern := workflowProcessor.ProtectedFoldersPattern()
+	protectedPathsPattern := workflowProcessor.ProtectedPathsPattern()
 
 	// Handle sparse checkout only for post-checkout with branch checkout
 	if shouldProcessSparseCheckout(hookType) {
@@ -51,17 +51,17 @@ func main() {
 
 	// Handle path protection for all hooks that modify working tree
 	if shouldProcessProtectedPaths(hookType) {
-		if len(protectedFoldersPattern.Patterns()) > 0 {
-			log.Printf("Protecting paths with protected folder patterns...")
+		if len(protectedPathsPattern.Patterns()) > 0 {
+			log.Printf("Protecting paths with protected paths patterns...")
 			
 			// Create protect processor
 			protectProcessor := protect.New(repositoryRoot)
-			err = protectProcessor.ProtectPaths(protectedFoldersPattern)
+			err = protectProcessor.ProtectPaths(protectedPathsPattern)
 			if err != nil {
 				log.Printf("Failed to protect paths: %v", err)
 			}
 		} else {
-			log.Printf("No protected folder patterns found, skipping path protection")
+			log.Printf("No protected paths patterns found, skipping path protection")
 		}
 	}
 }

@@ -51,8 +51,8 @@ func (p *Processor) AssignmentPattern() *regex.Processor {
 	return p.assignmentPattern
 }
 
-// ProtectedFoldersPattern returns the regex processor for protected folders patterns
-func (p *Processor) ProtectedFoldersPattern() *regex.Processor {
+// ProtectedPathsPattern returns the regex processor for protected paths patterns
+func (p *Processor) ProtectedPathsPattern() *regex.Processor {
 	return p.protectedFoldersPattern
 }
 
@@ -164,8 +164,8 @@ func (p *Processor) parseFile(filePath string) error {
 					}
 				}
 				
-				// Extract protected folder patterns
-				if protectedPatterns, ok := with[constants.WorkflowProtectedFolderRegexKey]; ok {
+				// Extract protected paths patterns
+				if protectedPatterns, ok := with[constants.WorkflowProtectedPathsRegexKey]; ok {
 					if protectedStr, ok := protectedPatterns.(string); ok {
 						p.protectedFoldersPattern.AddNewlineSeparated(protectedStr)
 					}
@@ -184,8 +184,8 @@ func (p *Processor) parseFile(filePath string) error {
 						}
 					}
 					
-					// Extract protected folder patterns
-					if protectedPatterns, ok := with[constants.WorkflowProtectedFolderRegexKey]; ok {
+					// Extract protected paths patterns
+					if protectedPatterns, ok := with[constants.WorkflowProtectedPathsRegexKey]; ok {
 						if protectedStr, ok := protectedPatterns.(string); ok {
 							p.protectedFoldersPattern.AddNewlineSeparated(protectedStr)
 						}

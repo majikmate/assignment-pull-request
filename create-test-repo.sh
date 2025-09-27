@@ -140,7 +140,7 @@ jobs:
             ^test/fixtures/labs/(lab-[\d]+)$
             ^test/fixtures/bootcamp/(.+/assignment-[\w\-]+)$
             ^test/fixtures/courses/(.+/assignment-[\w\-]+)$
-          protected-folder-regex: |
+          protected-paths-regex: |
             ^(.devcontainer)$
             ^(.github)$
           default-branch: main
