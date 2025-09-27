@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/majikmate/assignment-pull-request/internal/checkout"
 	"github.com/majikmate/assignment-pull-request/internal/protect"
@@ -68,10 +70,11 @@ func main() {
 
 // determineHookContext determines the git hook type and repository root
 func determineHookContext() (string, string, error) {
-	// Get repository root
-	repositoryRoot, err := os.Getwd()
+	// Use Git to find the repository root directory
+	// This is reliable regardless of current working directory
+	repositoryRoot, err := findRepositoryRoot()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get current working directory: %w", err)
+		return "", "", fmt.Errorf("failed to find repository root: %w", err)
 	}
 
 	// Determine hook type from program arguments or environment
@@ -82,6 +85,29 @@ func determineHookContext() (string, string, error) {
 
 	// Fallback: try to determine from program name or environment
 	return "unknown", repositoryRoot, nil
+}
+
+// findRepositoryRoot uses Git to find the top-level repository directory
+// This is more reliable than os.Getwd() because Git hooks can be called
+// from any subdirectory within the repository
+func findRepositoryRoot() (string, error) {
+	// Use git rev-parse --show-toplevel to find repository root
+	// This works from any directory within the repository
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to find repository root (not in a git repository?): %w", err)
+	}
+	
+	repositoryRoot := strings.TrimSpace(string(output))
+	
+	// Verify the repository root exists and is accessible
+	if _, err := os.Stat(repositoryRoot); err != nil {
+		return "", fmt.Errorf("repository root not accessible: %w", err)
+	}
+	
+	return repositoryRoot, nil
 }
 
 // shouldProcessSparseCheckout determines if sparse checkout should be processed for this hook

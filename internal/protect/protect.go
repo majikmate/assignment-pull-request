@@ -2,7 +2,6 @@ package protect
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"os/user"
@@ -15,10 +14,9 @@ import (
 )
 
 const (
-	majikOwner   = "majikmate:majikmate"
-	dirMode      = "0755"
-	fileMode     = "0644"
-	stagePrefix  = "majikmate-protect-sync-stage-"
+	mmUser      = "majikmate"
+	mmOwner     = mmUser + ":" + mmUser
+	stagePrefix = mmUser + "-protect-sync-stage-"
 )
 
 // Processor handles path protection operations
@@ -36,21 +34,33 @@ func New(repositoryRoot string) *Processor {
 }
 
 // ProtectPaths implements the protect-sync logic in Go:
-// 1. Find protected paths using regex patterns
-// 2. Check for unmerged entries under protected paths  
-// 3. Extract files from HEAD for protected paths
-// 4. Mirror to working tree with majikmate ownership and permissions
-// 5. Apply skip-worktree flags
+// 1. Acquire exclusive lock to prevent concurrent operations
+// 2. Find protected paths using regex patterns
+// 3. Check for unmerged entries under protected paths  
+// 4. Extract files from HEAD for protected paths
+// 5. Mirror to working tree with majikmate ownership and permissions
+// 6. Apply skip-worktree flags
 func (p *Processor) ProtectPaths(protectedFoldersPattern *regex.Processor) error {
 	fmt.Printf("🔒 Starting path protection (protect-sync logic)...\n")
+
+	// Acquire exclusive lock to prevent concurrent protect operations
+	lock, err := acquireLock(p.repositoryRoot)
+	if err != nil {
+		return fmt.Errorf("failed to acquire protect-paths lock: %w", err)
+	}
+	defer func() {
+		if releaseErr := lock.Release(); releaseErr != nil {
+			fmt.Printf("Warning: failed to release protect-paths lock: %v\n", releaseErr)
+		}
+	}()
 
 	// Must be running as majikmate user (called via sudo -u majikmate)
 	currentUser, err := user.Current()
 	if err != nil {
 		return fmt.Errorf("failed to get current user: %w", err)
 	}
-	if currentUser.Username != "majikmate" {
-		return fmt.Errorf("protect-sync must run as majikmate user (via sudo -u majikmate)")
+	if currentUser.Username != mmUser {
+		return fmt.Errorf("protect-sync must run as %s user (via sudo -u %s)", mmUser, mmUser)
 	}
 
 	// Find protected paths using patterns
@@ -109,7 +119,7 @@ func (p *Processor) findProtectedPaths(protectedFoldersPattern *regex.Processor)
 	return info, nil
 }
 
-// checkUnmergedEntries verifies no merge conflicts exist in protected paths
+// checkUnmergedEntries verifies no merge conflicts existx in protected paths
 func (p *Processor) checkUnmergedEntries(protectedPathsInfo *paths.Info) error {
 	if protectedPathsInfo.Empty() {
 		return nil
@@ -198,76 +208,67 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPathsInfo *paths.Info) (strin
 		return "", fmt.Errorf("failed to build snapshot from HEAD: %w", err)
 	}
 
+	// Set permissions in staging area before atomic sync
+	if err := p.setPermissions(stageDir); err != nil {
+		return "", fmt.Errorf("failed to set permissions in staging area: %w", err)
+	}
+
 	return stageDir, nil
 }
 
 // mirrorToWorkingTree syncs the snapshot to working tree with majikmate ownership
 func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *paths.Info) error {
-	fmt.Printf("  Mirroring to working tree with majikmate ownership...\n")
+	fmt.Printf("  Mirroring to working tree with %s ownership...\n", mmUser)
 
-	for _, protectedPath := range protectedPathsInfo.RelativePaths() {
-		if err := p.syncPath(stageDir, protectedPath); err != nil {
-			fmt.Printf("    Warning: failed to sync %s: %v\n", protectedPath, err)
-		}
+	if protectedPathsInfo.Empty() {
+		return nil
 	}
 
+	// Use rsync to atomically sync all protected paths from staging to working tree
+	// Permissions are already set in staging area, so rsync will preserve them atomically
+	// Source needs trailing slash to sync directory contents, destination should not have trailing slash
+	rsyncSource := filepath.Join(stageDir, "") + string(filepath.Separator)  // Ensure trailing slash
+	rsyncDest := filepath.Clean(p.repositoryRoot)                           // Clean path, no trailing slash
+	rsyncCmd := exec.Command("rsync", "-av", "--delete",
+		"--no-owner", "--no-group", "--omit-dir-times",
+		fmt.Sprintf("--chown=%s", mmOwner),
+		rsyncSource, rsyncDest)
+
+	fmt.Printf("    Executing atomic rsync for all protected paths...\n")
+	output, err := rsyncCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("atomic rsync failed: %w\nOutput: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	fmt.Printf("    ✅ Atomic sync completed for %d protected path(s)\n", protectedPathsInfo.Count())
 	return nil
 }
 
-// syncPath handles individual path synchronization
-func (p *Processor) syncPath(stageDir, protectedPath string) error {
-	srcPath := filepath.Join(stageDir, protectedPath)
-	dstPath := filepath.Join(p.repositoryRoot, protectedPath)
-
-	// Handle absent paths from HEAD
-	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-		if _, err := os.Stat(dstPath); err == nil {
-			fmt.Printf("    Removing absent path: %s\n", protectedPath)
-			return os.RemoveAll(dstPath)
-		}
-		return nil
+// setPermissions sets correct permissions on all files in the staging area
+func (p *Processor) setPermissions(stageDir string) error {
+	fmt.Printf("    Setting permissions in staging area...\n")
+	
+	// Use chmod -R with symbolic mode that preserves executable files:
+	// u=rwX,go=rX = user: read+write+execute_if_dir_or_executable
+	//               group+other: read+execute_if_dir_or_executable  
+	// 'X' sets execute permission on:
+	//   - Directories (always, for traversal)
+	//   - Files that already have execute permission (preserves executables)
+	// This results in:
+	//   - Directories: 0755 (always executable for traversal)
+	//   - Regular files: 0644 (not executable unless they were already)
+	//   - Executable files: 0755 (preserve executable status)
+	commands := []string{
+		fmt.Sprintf("cd '%s'", stageDir),
+		"chmod -R u=rwX,go=rX .",  // Smart permission setting that preserves executables
 	}
-
-	fmt.Printf("    Processing: %s\n", protectedPath)
-
-	// Ensure destination directory exists
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+	
+	command := strings.Join(commands, " && ")
+	if _, err := p.runCommandAsUser(command); err != nil {
+		return fmt.Errorf("failed to set permissions in staging area: %w", err)
 	}
-
-	// Use rsync for reliable synchronization
-	rsyncCmd := exec.Command("rsync", "-a", "--delete",
-		"--no-perms", "--no-owner", "--no-group", "--omit-dir-times",
-		fmt.Sprintf("--chown=%s", majikOwner),
-		srcPath+"/", dstPath+"/")
-
-	if output, err := rsyncCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("rsync failed: %w\nOutput: %s", err, strings.TrimSpace(string(output)))
-	}
-
-	// Set proper permissions
-	return p.setPermissions(dstPath)
-}
-
-// setPermissions applies the correct file and directory permissions
-func (p *Processor) setPermissions(rootPath string) error {
-	return filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		mode := fileMode
-		if d.IsDir() {
-			mode = dirMode
-		}
-
-		cmd := exec.Command("chmod", mode, path)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("chmod failed for %s: %w\nOutput: %s", path, err, string(output))
-		}
-
-		return nil
-	})
+	
+	return nil
 }
 
 // applySkipWorktreeFlags sets skip-worktree flags on all tracked files in protected paths
@@ -278,10 +279,13 @@ func (p *Processor) applySkipWorktreeFlags(protectedPathsInfo *paths.Info) error
 
 	fmt.Printf("  Applying skip-worktree flags...\n")
 
-	commands := []string{fmt.Sprintf("cd '%s'", p.repositoryRoot)}
-	for _, path := range protectedPathsInfo.RelativePaths() {
-		commands = append(commands,
-			fmt.Sprintf("git ls-files -z -- '%s' | xargs -0 -r git update-index --skip-worktree", path))
+	quotedPaths := protectedPathsInfo.QuotedRelativePaths()
+	commands := []string{
+		fmt.Sprintf("cd '%s'", p.repositoryRoot),
+		// atomic single git ls-files piped to single git update-index call
+		// It also avoids issues with paths containing special characters or spaces
+		// The -z and xargs -0 handle null-terminated paths safely
+		fmt.Sprintf("git ls-files -z -- %s | xargs -0 -r git update-index --skip-worktree", strings.Join(quotedPaths, " ")),
 	}
 
 	command := strings.Join(commands, " && ")
