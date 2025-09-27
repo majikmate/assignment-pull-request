@@ -3,12 +3,12 @@ package protect
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
+
+	"github.com/majikmate/assignment-pull-request/internal/git"
 )
 
 // Lock represents a file-based lock for protect operations
@@ -21,7 +21,7 @@ type Lock struct {
 // This prevents concurrent protect-sync operations on the same repository
 func acquireLock(repositoryRoot string) (*Lock, error) {
 	// Use Git to find the actual git directory (handles worktrees, submodules, etc.)
-	gitDir, err := findGitDir(repositoryRoot)
+	gitDir, err := git.FindGitDir(repositoryRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find git directory: %w", err)
 	}
@@ -94,36 +94,4 @@ func isProcessRunning(pid int) bool {
 	
 	err = process.Signal(syscall.Signal(0))
 	return err == nil
-}
-
-// findGitDir locates the actual git directory for the repository
-// This handles git worktrees, submodules, and other Git configurations
-// where .git might not be a directory in the repository root
-func findGitDir(repositoryRoot string) (string, error) {
-	// Use git rev-parse --git-dir to find the actual git directory
-	// This handles all Git configurations correctly
-	cmd := exec.Command("git", "rev-parse", "--git-dir")
-	cmd.Dir = repositoryRoot
-	
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to find git directory: %w", err)
-	}
-	
-	gitDir := strings.TrimSpace(string(output))
-	
-	// If gitDir is relative, make it absolute relative to repositoryRoot
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(repositoryRoot, gitDir)
-	}
-	
-	// Clean the path to remove any redundant elements
-	gitDir = filepath.Clean(gitDir)
-	
-	// Verify the git directory exists and is accessible
-	if _, err := os.Stat(gitDir); err != nil {
-		return "", fmt.Errorf("git directory not accessible: %w", err)
-	}
-	
-	return gitDir, nil
 }

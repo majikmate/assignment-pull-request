@@ -27,10 +27,10 @@ type Processor struct {
 
 // New creates a new protect processor
 func New(repositoryRoot string) *Processor {
-	return &Processor{
-		repositoryRoot: repositoryRoot,
-		gitOps:         git.NewOperations(false), // Not in dry-run mode
-	}
+        return &Processor{
+                repositoryRoot: repositoryRoot,
+                gitOps:         git.NewOperations(false), // Not in dry-run mode
+        }
 }
 
 // ProtectPaths implements the protect-sync logic in Go:
