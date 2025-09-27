@@ -2,7 +2,7 @@
 set -e
 
 # Configuration
-REPO_NAME="assignment-pull-request-test"
+REPO_NAME="module-html-css-test"
 
 # Determine the repo owner for the fork:
 # 1) Allow override via TEST_REPO_OWNER env var
@@ -61,26 +61,26 @@ else
   echo "ℹ️  No existing test repository found"
 fi
 
-# Step 2: Fork the repository
-echo "🍴 Creating fork of majikmate/assignment-pull-request..."
-gh repo fork majikmate/assignment-pull-request --fork-name "${REPO_NAME}" --clone=false
+# Step 2: Create repository and clone module-html-css content
+echo "📦 Creating test repository with module-html-css content..."
+gh repo create "${FULL_REPO_NAME}" --public --description "Test repo for assignment PR actions with module-html-css content"
 
-# Wait for fork to be ready
-echo "⏳ Waiting for fork to be ready..."
-MAX_FORK_ATTEMPTS=12
-FORK_ATTEMPT=1
-while [ $FORK_ATTEMPT -le $MAX_FORK_ATTEMPTS ]; do
-  echo "Checking fork availability (attempt $FORK_ATTEMPT/$MAX_FORK_ATTEMPTS)..."
+# Wait for repo to be ready
+echo "⏳ Waiting for repository to be ready..."
+MAX_REPO_ATTEMPTS=12
+REPO_ATTEMPT=1
+while [ $REPO_ATTEMPT -le $MAX_REPO_ATTEMPTS ]; do
+  echo "Checking repository availability (attempt $REPO_ATTEMPT/$MAX_REPO_ATTEMPTS)..."
   if gh repo view "${FULL_REPO_NAME}" >/dev/null 2>&1; then
-    echo "✅ Fork is ready!"
+    echo "✅ Repository is ready!"
     break
   fi
   sleep 5
-  FORK_ATTEMPT=$((FORK_ATTEMPT+1))
+  REPO_ATTEMPT=$((REPO_ATTEMPT+1))
 done
 
-if [ $FORK_ATTEMPT -gt $MAX_FORK_ATTEMPTS ]; then
-  echo "❌ Fork not ready after waiting. Exiting."
+if [ $REPO_ATTEMPT -gt $MAX_REPO_ATTEMPTS ]; then
+  echo "❌ Repository not ready after waiting. Exiting."
   exit 1
 fi
 
@@ -89,10 +89,13 @@ if [ -d "${REPO_NAME}" ]; then
   rm -rf "${REPO_NAME}"
 fi
 
-# Clone the fork
-echo "📥 Cloning the fork..."
-git clone "https://github.com/${FULL_REPO_NAME}.git" "${REPO_NAME}"
+# Clone the module-html-css repository content
+echo "📥 Cloning module-html-css content..."
+git clone "https://github.com/majikmate/module-html-css.git" "${REPO_NAME}"
 cd "${REPO_NAME}"
+
+# Update remote to point to our test repository
+git remote set-url origin "https://github.com/${FULL_REPO_NAME}.git"
 
 echo "🧹 Setting up test workflow..."
 
@@ -135,21 +138,19 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           assignment-regex: |
-            ^test/fixtures/assignments/(assignment-[\d]+)$
-            ^test/fixtures/homework/(hw-[\d]+)$
-            ^test/fixtures/labs/(lab-[\d]+)$
-            ^test/fixtures/bootcamp/(.+/assignment-[\w\-]+)$
-            ^test/fixtures/courses/(.+/assignment-[\w\-]+)$
+            ^none$
           protected-paths-regex: |
             ^(.devcontainer)$
             ^(.github)$
+            ^(10-tutorials)$
+            ^(reference-material)$
           default-branch: main
           dry-run: "no"
 EOF
 
 # Commit and push the changes
-echo "📝 Committing and pushing test workflow..."
+echo "📝 Committing and pushing test workflow and module content..."
 git add .
-git commit -m "Update workflow for testing"
+git commit -m "Add test workflow and module-html-css content"
 git push origin main
-echo "✅ Test workflow pushed"
+echo "✅ Test workflow and content pushed"
