@@ -20,8 +20,9 @@ type Lock struct {
 // acquireLock attempts to acquire an exclusive lock for protect operations
 // This prevents concurrent protect-sync operations on the same repository
 func acquireLock(repositoryRoot string) (*Lock, error) {
-	// Use Git to find the actual git directory (handles worktrees, submodules, etc.)
-	gitDir, err := git.FindGitDir(repositoryRoot)
+	// Use Git operations to find the actual git directory (handles worktrees, submodules, etc.)
+	gitOps := git.NewOperationsWithDir(false, repositoryRoot)
+	gitDir, err := gitOps.FindGitDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find git directory: %w", err)
 	}

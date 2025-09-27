@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -75,17 +76,53 @@ func (c *Commander) RunCommandWithOutput(command, description string) (string, e
 // Operations provides higher-level git operations
 type Operations struct {
 	commander *Commander
+	workDir   string // Optional working directory for git commands
 }
 
 // NewOperations creates a new git operations handler
 func NewOperations(dryRun bool) *Operations {
 	return &Operations{
 		commander: NewCommander(dryRun),
+		workDir:   "", // Use current directory
+	}
+}
+
+// NewOperationsWithDir creates a new git operations handler with specific working directory
+func NewOperationsWithDir(dryRun bool, workDir string) *Operations {
+	return &Operations{
+		commander: NewCommander(dryRun),
+		workDir:   workDir,
 	}
 }
 
 // Helper function to run git rev-parse commands
 func (o *Operations) revParse(args string, description string) (string, error) {
+	if o.workDir != "" {
+		// Use exec.Command directly when we need to set working directory
+		cmd := exec.Command("git", "rev-parse")
+		cmd.Args = append(cmd.Args, strings.Fields(args)...)
+		cmd.Dir = o.workDir
+		
+		if o.commander.dryRun {
+			if description != "" {
+				fmt.Printf("[DRY RUN] %s: git rev-parse %s (in %s)\n", description, args, o.workDir)
+			}
+			return "", nil
+		}
+		
+		if description != "" {
+			fmt.Printf("%s: git rev-parse %s (in %s)\n", description, args, o.workDir)
+		}
+		
+		output, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("error running git rev-parse %s: %w", args, err)
+		}
+		
+		return strings.TrimSpace(string(output)), nil
+	}
+	
+	// Use commander for current directory operations
 	return o.commander.RunCommandWithOutput(
 		fmt.Sprintf("git rev-parse %s", args),
 		description,
@@ -371,31 +408,39 @@ func (o *Operations) GetGitDir() (string, error) {
 	return o.revParse("--git-dir", "Get git directory")
 }
 
-// FindRepositoryRoot finds the repository root directory from any subdirectory
-// This is a standalone function that doesn't require an Operations instance
-func FindRepositoryRoot() (string, error) {
-	ops := NewOperations(false)
-	return ops.GetRepositoryRoot()
-}
-
-// FindGitDir finds the actual git directory from the given repository root
-// This is a standalone function that handles worktrees, submodules, etc.
-func FindGitDir(repositoryRoot string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--git-dir")
-	cmd.Dir = repositoryRoot
-	
-	output, err := cmd.Output()
+// FindGitDir finds the actual git directory, handling worktrees, submodules, etc.
+func (o *Operations) FindGitDir() (string, error) {
+	gitDir, err := o.GetGitDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to find git directory: %w", err)
 	}
 	
-	gitDir := strings.TrimSpace(string(output))
-	
-	// If gitDir is relative, make it absolute relative to repositoryRoot
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(repositoryRoot, gitDir)
+	// If gitDir is relative and we have a working directory, make it absolute
+	if o.workDir != "" && !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(o.workDir, gitDir)
 	}
 	
 	// Clean the path to remove any redundant elements
-	return filepath.Clean(gitDir), nil
+	gitDir = filepath.Clean(gitDir)
+	
+	// Verify the git directory exists and is accessible
+	if _, err := os.Stat(gitDir); err != nil {
+		return "", fmt.Errorf("git directory not accessible: %w", err)
+	}
+	
+	// Verify it's actually a git directory by checking for essential git files/directories
+	essentialPaths := []string{
+		"HEAD",        // Required: points to current branch
+		"refs",        // Required: directory containing references
+		"objects",     // Required: directory containing git objects
+	}
+	
+	for _, path := range essentialPaths {
+		fullPath := filepath.Join(gitDir, path)
+		if _, err := os.Stat(fullPath); err != nil {
+			return "", fmt.Errorf("missing essential git component '%s': %w", path, err)
+		}
+	}
+	
+	return gitDir, nil
 }

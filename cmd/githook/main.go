@@ -69,9 +69,10 @@ func main() {
 
 // determineHookContext determines the git hook type and repository root
 func determineHookContext() (string, string, error) {
-	// Use Git to find the repository root directory
+	// Use Git operations to find the repository root directory
 	// This is reliable regardless of current working directory
-	repositoryRoot, err := git.FindRepositoryRoot()
+	gitOps := git.NewOperations(false)
+	repositoryRoot, err := gitOps.GetRepositoryRoot()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to find repository root: %w", err)
 	}
