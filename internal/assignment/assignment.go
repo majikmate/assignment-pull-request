@@ -117,7 +117,7 @@ func (ap *Processor) findAssignments() ([]string, error) {
 	}
 
 	// Find all matching directories (only directories, not files)
-	result, err := pathsProcessor.FindWithOptions(paths.FindOptions{
+	info, err := pathsProcessor.FindWithOptions(paths.FindOptions{
 		IncludeFiles:   false, // Only directories
 		IncludeDirs:    true,
 		LogPrefix:      "📁",
@@ -128,7 +128,7 @@ func (ap *Processor) findAssignments() ([]string, error) {
 	}
 
 	// Get absolute paths and sort
-	assignments := result.AbsolutePaths()
+	assignments := info.AbsolutePaths()
 	sort.Strings(assignments)
 
 	return assignments, nil

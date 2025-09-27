@@ -54,49 +54,49 @@ func (p *Processor) ProtectPaths(protectedFoldersPattern *regex.Processor) error
 	}
 
 	// Find protected paths using patterns
-	protectedPathsResult, err := p.findProtectedPaths(protectedFoldersPattern)
+	protectedPathsInfo, err := p.findProtectedPaths(protectedFoldersPattern)
 	if err != nil {
 		return err
 	}
 
-	if protectedPathsResult.Empty() {
+	if protectedPathsInfo.Empty() {
 		fmt.Println("No paths match protected patterns")
 		return nil
 	}
 
-	fmt.Printf("Processing %d protected path(s)...\n", protectedPathsResult.Count())
+	fmt.Printf("Processing %d protected path(s)...\n", protectedPathsInfo.Count())
 
 	// Execute the protect-sync workflow
-	if err := p.checkUnmergedEntries(protectedPathsResult); err != nil {
+	if err := p.checkUnmergedEntries(protectedPathsInfo); err != nil {
 		return err
 	}
 
-	stageDir, err := p.buildSnapshotFromHEAD(protectedPathsResult)
+	stageDir, err := p.buildSnapshotFromHEAD(protectedPathsInfo)
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(stageDir)
 
-	if err := p.mirrorToWorkingTree(stageDir, protectedPathsResult); err != nil {
+	if err := p.mirrorToWorkingTree(stageDir, protectedPathsInfo); err != nil {
 		return err
 	}
 
-	if err := p.applySkipWorktreeFlags(protectedPathsResult); err != nil {
+	if err := p.applySkipWorktreeFlags(protectedPathsInfo); err != nil {
 		return err
 	}
 
-	fmt.Printf("✅ Path protection completed for %d path(s)\n", protectedPathsResult.Count())
+	fmt.Printf("✅ Path protection completed for %d path(s)\n", protectedPathsInfo.Count())
 	return nil
 }
 
-// findProtectedPaths discovers paths matching the protection patterns and returns a Result for flexible usage
-func (p *Processor) findProtectedPaths(protectedFoldersPattern *regex.Processor) (*paths.Result, error) {
+// findProtectedPaths discovers paths matching the protection patterns and returns Info for flexible usage
+func (p *Processor) findProtectedPaths(protectedFoldersPattern *regex.Processor) (*paths.Info, error) {
 	pathsProcessor, err := paths.NewProcessor(p.repositoryRoot, protectedFoldersPattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create paths processor: %w", err)
 	}
 
-	result, err := pathsProcessor.FindWithOptions(paths.FindOptions{
+	info, err := pathsProcessor.FindWithOptions(paths.FindOptions{
 		IncludeFiles:   true,
 		IncludeDirs:    true,
 		LogPrefix:      "🔒",
@@ -106,18 +106,18 @@ func (p *Processor) findProtectedPaths(protectedFoldersPattern *regex.Processor)
 		return nil, fmt.Errorf("failed to find protected paths: %w", err)
 	}
 
-	return result, nil
+	return info, nil
 }
 
 // checkUnmergedEntries verifies no merge conflicts exist in protected paths
-func (p *Processor) checkUnmergedEntries(protectedPathsResult *paths.Result) error {
-	if protectedPathsResult.Empty() {
+func (p *Processor) checkUnmergedEntries(protectedPathsInfo *paths.Info) error {
+	if protectedPathsInfo.Empty() {
 		return nil
 	}
 
 	fmt.Printf("  Checking for merge conflicts in protected paths...\n")
 	
-	quotedPaths := protectedPathsResult.QuotedRelativePaths()
+	quotedPaths := protectedPathsInfo.QuotedRelativePaths()
 	commands := []string{
 		fmt.Sprintf("cd '%s'", p.repositoryRoot),
 		fmt.Sprintf("git ls-files -u -- %s", strings.Join(quotedPaths, " ")),
@@ -151,7 +151,7 @@ func (p *Processor) checkUnmergedEntries(protectedPathsResult *paths.Result) err
 // - git archive: Cannot handle sparse path patterns reliably
 // - git show HEAD:path: Requires individual file handling, complex for directories
 // - Temporary index: Atomic, isolated, handles directories/files uniformly
-func (p *Processor) buildSnapshotFromHEAD(protectedPathsResult *paths.Result) (string, error) {
+func (p *Processor) buildSnapshotFromHEAD(protectedPathsInfo *paths.Info) (string, error) {
 	fmt.Printf("  Building snapshot from HEAD...\n")
 
 	// Create staging directory where we'll extract the clean HEAD version
@@ -167,11 +167,11 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPathsResult *paths.Result) (s
 		}
 	}()
 
-	if protectedPathsResult.Empty() {
+	if protectedPathsInfo.Empty() {
 		return stageDir, nil
 	}
 
-	quotedPaths := protectedPathsResult.QuotedRelativePaths()
+	quotedPaths := protectedPathsInfo.QuotedRelativePaths()
 	commands := []string{
 		fmt.Sprintf("cd '%s'", p.repositoryRoot),
 		// Create temporary index file (separate from .git/index)
@@ -202,10 +202,10 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPathsResult *paths.Result) (s
 }
 
 // mirrorToWorkingTree syncs the snapshot to working tree with majikmate ownership
-func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsResult *paths.Result) error {
+func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *paths.Info) error {
 	fmt.Printf("  Mirroring to working tree with majikmate ownership...\n")
 
-	for _, protectedPath := range protectedPathsResult.RelativePaths() {
+	for _, protectedPath := range protectedPathsInfo.RelativePaths() {
 		if err := p.syncPath(stageDir, protectedPath); err != nil {
 			fmt.Printf("    Warning: failed to sync %s: %v\n", protectedPath, err)
 		}
@@ -271,15 +271,15 @@ func (p *Processor) setPermissions(rootPath string) error {
 }
 
 // applySkipWorktreeFlags sets skip-worktree flags on all tracked files in protected paths
-func (p *Processor) applySkipWorktreeFlags(protectedPathsResult *paths.Result) error {
-	if protectedPathsResult.Empty() {
+func (p *Processor) applySkipWorktreeFlags(protectedPathsInfo *paths.Info) error {
+	if protectedPathsInfo.Empty() {
 		return nil
 	}
 
 	fmt.Printf("  Applying skip-worktree flags...\n")
 
 	commands := []string{fmt.Sprintf("cd '%s'", p.repositoryRoot)}
-	for _, path := range protectedPathsResult.RelativePaths() {
+	for _, path := range protectedPathsInfo.RelativePaths() {
 		commands = append(commands,
 			fmt.Sprintf("git ls-files -z -- '%s' | xargs -0 -r git update-index --skip-worktree", path))
 	}

@@ -10,66 +10,89 @@ import (
 	"github.com/majikmate/assignment-pull-request/internal/regex"
 )
 
-// Info represents a path that matched a pattern
-type Info struct {
+// PathEntry represents a single path that matched a pattern
+type PathEntry struct {
 	Path         string // Absolute path
 	RelativePath string // Relative path from root
 }
 
-// Result represents the result of a path search operation
-type Result struct {
-	paths []Info
+// Info represents the result of a path search operation with lazy-computed path arrays
+type Info struct {
+	// Raw path entries (primary data storage)
+	entries []PathEntry
+	
+	// Lazily computed and cached arrays (computed only when first accessed)
+	absolutePaths  []string
+	relativePaths  []string
+	quotedAbsolute []string
+	quotedRelative []string
 }
 
-// Paths returns all path info objects
-func (r *Result) Paths() []Info {
-	return r.paths
-}
-
-// AbsolutePaths returns only the absolute paths
-func (r *Result) AbsolutePaths() []string {
-	var paths []string
-	for _, info := range r.paths {
-		paths = append(paths, info.Path)
+// newInfo creates a new Info struct with the given path entries
+func newInfo(entries []PathEntry) *Info {
+	return &Info{
+		entries: entries,
+		// Arrays will be computed lazily on first access
 	}
-	return paths
 }
 
-// RelativePaths returns only the relative paths
-func (r *Result) RelativePaths() []string {
-	var paths []string
-	for _, info := range r.paths {
-		paths = append(paths, info.RelativePath)
-	}
-	return paths
+// Paths returns all path entry objects
+func (i *Info) Paths() []PathEntry {
+	return i.entries
 }
 
-// QuotedRelativePaths returns relative paths quoted for shell usage
-func (r *Result) QuotedRelativePaths() []string {
-	var quoted []string
-	for _, info := range r.paths {
-		quoted = append(quoted, fmt.Sprintf("'%s'", info.RelativePath))
+// AbsolutePaths returns only the absolute paths (computed and cached on first access)
+func (i *Info) AbsolutePaths() []string {
+	if i.absolutePaths == nil && len(i.entries) > 0 {
+		i.absolutePaths = make([]string, len(i.entries))
+		for idx, entry := range i.entries {
+			i.absolutePaths[idx] = entry.Path
+		}
 	}
-	return quoted
+	return i.absolutePaths
 }
 
-// QuotedAbsolutePaths returns absolute paths quoted for shell usage
-func (r *Result) QuotedAbsolutePaths() []string {
-	var quoted []string
-	for _, info := range r.paths {
-		quoted = append(quoted, fmt.Sprintf("'%s'", info.Path))
+// RelativePaths returns only the relative paths (computed and cached on first access)
+func (i *Info) RelativePaths() []string {
+	if i.relativePaths == nil && len(i.entries) > 0 {
+		i.relativePaths = make([]string, len(i.entries))
+		for idx, entry := range i.entries {
+			i.relativePaths[idx] = entry.RelativePath
+		}
 	}
-	return quoted
+	return i.relativePaths
+}
+
+// QuotedRelativePaths returns relative paths quoted for shell usage (computed and cached on first access)
+func (i *Info) QuotedRelativePaths() []string {
+	if i.quotedRelative == nil && len(i.entries) > 0 {
+		i.quotedRelative = make([]string, len(i.entries))
+		for idx, entry := range i.entries {
+			i.quotedRelative[idx] = fmt.Sprintf("'%s'", entry.RelativePath)
+		}
+	}
+	return i.quotedRelative
+}
+
+// QuotedAbsolutePaths returns absolute paths quoted for shell usage (computed and cached on first access)
+func (i *Info) QuotedAbsolutePaths() []string {
+	if i.quotedAbsolute == nil && len(i.entries) > 0 {
+		i.quotedAbsolute = make([]string, len(i.entries))
+		for idx, entry := range i.entries {
+			i.quotedAbsolute[idx] = fmt.Sprintf("'%s'", entry.Path)
+		}
+	}
+	return i.quotedAbsolute
 }
 
 // Count returns the number of matched paths
-func (r *Result) Count() int {
-	return len(r.paths)
+func (i *Info) Count() int {
+	return len(i.entries)
 }
 
 // Empty returns true if no paths were found
-func (r *Result) Empty() bool {
-	return len(r.paths) == 0
+func (i *Info) Empty() bool {
+	return len(i.entries) == 0
 }
 
 // Processor handles generic path discovery and processing
@@ -99,7 +122,7 @@ func NewProcessor(root string, patterns *regex.Processor) (*Processor, error) {
 }
 
 // Find discovers all paths matching the processor's regex patterns
-func (p *Processor) Find() (*Result, error) {
+func (p *Processor) Find() (*Info, error) {
 	return p.FindWithOptions(FindOptions{})
 }
 
@@ -116,7 +139,7 @@ type FindOptions struct {
 }
 
 // FindWithOptions discovers all paths matching the processor's regex patterns with custom options
-func (p *Processor) FindWithOptions(opts FindOptions) (*Result, error) {
+func (p *Processor) FindWithOptions(opts FindOptions) (*Info, error) {
 	// Set defaults
 	if !opts.IncludeFiles && !opts.IncludeDirs {
 		opts.IncludeFiles = true
@@ -218,16 +241,16 @@ func (p *Processor) FindWithOptions(opts FindOptions) (*Result, error) {
 
 	fmt.Printf("%s Found %d %s (checked %d paths total)\n", opts.LogPrefix, matchedCount, opts.LogDescription, checkedPaths)
 
-	// Convert paths to Info structs and return Result
-	var pathInfos []Info
+	// Convert paths to PathEntry structs and return Info
+	var pathEntries []PathEntry
 	for _, pathPair := range matchedPaths {
-		pathInfos = append(pathInfos, Info{
+		pathEntries = append(pathEntries, PathEntry{
 			Path:         pathPair.absolutePath,
 			RelativePath: pathPair.relativePath,
 		})
 	}
 
-	return &Result{paths: pathInfos}, nil
+	return newInfo(pathEntries), nil
 }
 
 // GetRegexStrings returns the regex patterns as strings
