@@ -29,7 +29,7 @@ type Processor struct {
 func New(repositoryRoot string) *Processor {
         return &Processor{
                 repositoryRoot: repositoryRoot,
-                gitOps:         git.NewOperations(false), // Not in dry-run mode
+                gitOps:         git.NewOperationsWithDir(false, repositoryRoot), // Use repository root as working directory
         }
 }
 
@@ -119,7 +119,7 @@ func (p *Processor) findProtectedPaths(protectedFoldersPattern *regex.Processor)
 	return info, nil
 }
 
-// checkUnmergedEntries verifies no merge conflicts existx in protected paths
+// checkUnmergedEntries verifies no merge conflicts exist in protected paths
 func (p *Processor) checkUnmergedEntries(protectedPathsInfo *paths.Info) error {
 	if protectedPathsInfo.Empty() {
 		return nil
@@ -128,22 +128,7 @@ func (p *Processor) checkUnmergedEntries(protectedPathsInfo *paths.Info) error {
 	fmt.Printf("  Checking for merge conflicts in protected paths...\n")
 	
 	quotedPaths := protectedPathsInfo.QuotedRelativePaths()
-	commands := []string{
-		fmt.Sprintf("cd '%s'", p.repositoryRoot),
-		fmt.Sprintf("git ls-files -u -- %s", strings.Join(quotedPaths, " ")),
-	}
-	
-	command := strings.Join(commands, " && ")
-	output, err := p.runCommandAsUser(command)
-	if err != nil {
-		return fmt.Errorf("failed to check for unmerged entries: %w", err)
-	}
-
-	if strings.TrimSpace(output) != "" {
-		return fmt.Errorf("protect-sync: conflicts under protected prefixes — resolve first")
-	}
-
-	return nil
+	return p.gitOps.CheckUnmergedEntries(quotedPaths)
 }
 
 // buildSnapshotFromHEAD creates a staging directory with files from HEAD
@@ -181,30 +166,9 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPathsInfo *paths.Info) (strin
 		return stageDir, nil
 	}
 
+	// Use git operations to build snapshot from HEAD
 	quotedPaths := protectedPathsInfo.QuotedRelativePaths()
-	commands := []string{
-		fmt.Sprintf("cd '%s'", p.repositoryRoot),
-		// Create temporary index file (separate from .git/index)
-		"TMPIDX=$(mktemp)",
-		// Ensure temp index cleanup on shell exit (belts and suspenders)
-		"trap 'rm -f \"$TMPIDX\"' EXIT",
-		// Populate temp index with specified paths from HEAD commit
-		// GIT_INDEX_FILE redirects Git to use our temporary index instead of .git/index
-		// read-tree populates the index with tree objects (directories/files) from HEAD
-		// The '|| true' handles cases where paths don't exist in HEAD (no error)
-		fmt.Sprintf("GIT_INDEX_FILE=\"$TMPIDX\" git read-tree HEAD -- %s 2>/dev/null || true", strings.Join(quotedPaths, " ")),
-		// Check if our temp index actually contains any files (read-tree succeeded)
-		"if GIT_INDEX_FILE=\"$TMPIDX\" git ls-files -z | grep -q .; then",
-		// Extract all files from temp index to staging directory
-		// checkout-index -a = all files in index, --prefix adds directory prefix
-		// This creates the actual file content in stageDir/ matching the index structure
-		fmt.Sprintf("  GIT_INDEX_FILE=\"$TMPIDX\" git checkout-index -a --prefix='%s/' >/dev/null", stageDir),
-		"fi",
-		// temp index file is automatically cleaned up by trap on command completion
-	}
-
-	command := strings.Join(commands, " && ")
-	if _, err = p.runCommandAsUser(command); err != nil {
+	if err := p.gitOps.BuildSnapshotFromHEAD(quotedPaths, stageDir); err != nil {
 		return "", fmt.Errorf("failed to build snapshot from HEAD: %w", err)
 	}
 
@@ -280,20 +244,7 @@ func (p *Processor) applySkipWorktreeFlags(protectedPathsInfo *paths.Info) error
 	fmt.Printf("  Applying skip-worktree flags...\n")
 
 	quotedPaths := protectedPathsInfo.QuotedRelativePaths()
-	commands := []string{
-		fmt.Sprintf("cd '%s'", p.repositoryRoot),
-		// atomic single git ls-files piped to single git update-index call
-		// It also avoids issues with paths containing special characters or spaces
-		// The -z and xargs -0 handle null-terminated paths safely
-		fmt.Sprintf("git ls-files -z -- %s | xargs -0 -r git update-index --skip-worktree", strings.Join(quotedPaths, " ")),
-	}
-
-	command := strings.Join(commands, " && ")
-	if _, err := p.runCommandAsUser(command); err != nil {
-		return fmt.Errorf("failed to apply skip-worktree flags: %w", err)
-	}
-
-	return nil
+	return p.gitOps.ApplySkipWorktreeFlags(quotedPaths)
 }
 
 // runCommandAsUser executes a command as the original user (never root)

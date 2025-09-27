@@ -444,3 +444,92 @@ func (o *Operations) FindGitDir() (string, error) {
 	
 	return gitDir, nil
 }
+
+// CheckUnmergedEntries checks for merge conflicts in the specified paths
+func (o *Operations) CheckUnmergedEntries(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	
+	pathsStr := strings.Join(paths, " ")
+	command := fmt.Sprintf("git ls-files -u -- %s", pathsStr)
+	
+	output, err := o.runCommandInContext(command, "Check for unmerged entries")
+	if err != nil {
+		return fmt.Errorf("failed to check for unmerged entries: %w", err)
+	}
+	
+	if strings.TrimSpace(output) != "" {
+		return fmt.Errorf("conflicts found in protected paths - resolve first")
+	}
+	
+	return nil
+}
+
+// BuildSnapshotFromHEAD creates a staging directory with files from HEAD using temporary index
+func (o *Operations) BuildSnapshotFromHEAD(paths []string, stageDir string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	
+	pathsStr := strings.Join(paths, " ")
+	commands := []string{
+		// Create temporary index file (separate from .git/index)
+		"TMPIDX=$(mktemp)",
+		// Ensure temp index cleanup on shell exit
+		"trap 'rm -f \"$TMPIDX\"' EXIT",
+		// Populate temp index with specified paths from HEAD commit
+		fmt.Sprintf("GIT_INDEX_FILE=\"$TMPIDX\" git read-tree HEAD -- %s 2>/dev/null || true", pathsStr),
+		// Check if temp index contains any files
+		"if GIT_INDEX_FILE=\"$TMPIDX\" git ls-files -z | grep -q .; then",
+		// Extract all files from temp index to staging directory
+		fmt.Sprintf("  GIT_INDEX_FILE=\"$TMPIDX\" git checkout-index -a --prefix='%s/' >/dev/null", stageDir),
+		"fi",
+	}
+	
+	command := strings.Join(commands, " && ")
+	_, err := o.runCommandInContext(command, "Build snapshot from HEAD")
+	return err
+}
+
+// ApplySkipWorktreeFlags applies skip-worktree flags to tracked files in specified paths
+func (o *Operations) ApplySkipWorktreeFlags(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	
+	pathsStr := strings.Join(paths, " ")
+	command := fmt.Sprintf("git ls-files -z -- %s | xargs -0 -r git update-index --skip-worktree", pathsStr)
+	_, err := o.runCommandInContext(command, "Apply skip-worktree flags")
+	return err
+}
+
+// Helper to run commands with working directory context
+func (o *Operations) runCommandInContext(command, description string) (string, error) {
+	if o.workDir != "" {
+		// Use exec.Command directly when we need to set working directory
+		cmd := exec.Command("sh", "-c", command)
+		cmd.Dir = o.workDir
+		
+		if o.commander.dryRun {
+			if description != "" {
+				fmt.Printf("[DRY RUN] %s: %s (in %s)\n", description, command, o.workDir)
+			}
+			return "", nil
+		}
+		
+		if description != "" {
+			fmt.Printf("%s: %s (in %s)\n", description, command, o.workDir)
+		}
+		
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("error running command '%s': %w\nOutput: %s", command, err, string(output))
+		}
+		
+		return strings.TrimSpace(string(output)), nil
+	}
+	
+	// Use commander for current directory operations
+	return o.commander.RunCommandWithOutput(command, description)
+}
