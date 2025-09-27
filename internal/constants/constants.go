@@ -41,13 +41,10 @@ const (
 	// GitHubWorkflowTemplatesDir is the directory containing GitHub workflow templates
 	GitHubWorkflowTemplatesDir = ".github/workflow-templates"
 
-	// SparseCheckoutFile is the path to git sparse-checkout configuration
-	SparseCheckoutFile = ".git/info/sparse-checkout"
-
 	// ReadmeFileName is the standard README file name
 	ReadmeFileName = "README.md"
 
-	// ReadmeFileName is the standard README file name
+	// ReadmeFileNameLowerCase is the lowercase README file name
 	ReadmeFileNameLowerCase = "readme.md"
 )
 
@@ -58,9 +55,6 @@ const (
 
 	// YamlAltExtension is the alternative YAML file extension
 	YamlAltExtension = ".yaml"
-
-	// MarkdownExtension is the Markdown file extension
-	MarkdownExtension = ".md"
 )
 
 // Repository folders to filter out from sparse-checkout

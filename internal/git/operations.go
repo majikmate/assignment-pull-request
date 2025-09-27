@@ -185,63 +185,6 @@ func (o *Operations) PushBranch(branchName string) error {
 	)
 }
 
-// MergeBranchToMain merges a specific branch into main
-func (o *Operations) MergeBranchToMain(branchName string) error {
-	return o.MergeBranchTo(branchName, DefaultBranch)
-}
-
-// UpdateBranchFromMain updates a branch with the latest changes from main
-func (o *Operations) UpdateBranchFromMain(branchName string) error {
-	return o.UpdateBranchFrom(branchName, DefaultBranch)
-}
-
-// MergeBranchTo merges a specific branch into target branch
-func (o *Operations) MergeBranchTo(sourceBranch, targetBranch string) error {
-	// First switch to target branch
-	if err := o.SwitchToBranch(targetBranch); err != nil {
-		return err
-	}
-
-	// Merge the source branch
-	return o.commander.RunCommand(
-		fmt.Sprintf("git merge %s --no-ff", sourceBranch),
-		fmt.Sprintf("Merge branch '%s' into %s", sourceBranch, targetBranch),
-	)
-}
-
-// UpdateBranchFrom updates a branch with the latest changes from source branch
-func (o *Operations) UpdateBranchFrom(targetBranch, sourceBranch string) error {
-	// Switch to the target branch
-	if err := o.SwitchToBranch(targetBranch); err != nil {
-		return err
-	}
-
-	// Merge source into target branch
-	return o.commander.RunCommand(
-		fmt.Sprintf("git merge %s --no-ff", sourceBranch),
-		fmt.Sprintf("Update branch '%s' with latest changes from %s", targetBranch, sourceBranch),
-	)
-}
-
-// PullMainFromRemote pulls the latest changes from remote main
-func (o *Operations) PullMainFromRemote() error {
-	return o.PullBranchFromRemote(DefaultBranch)
-}
-
-// PullBranchFromRemote pulls the latest changes from remote for specified branch
-func (o *Operations) PullBranchFromRemote(branchName string) error {
-	// Switch to branch first
-	if err := o.SwitchToBranch(branchName); err != nil {
-		return err
-	}
-
-	// Pull latest changes
-	return o.commander.RunCommand(
-		fmt.Sprintf("git pull %s %s", DefaultRemote, branchName),
-		fmt.Sprintf("Pull latest changes from remote %s", branchName),
-	)
-}
-
 // GetLocalBranches returns a map of local branch names
 func (o *Operations) GetLocalBranches() (map[string]bool, error) {
 	if o.commander.dryRun {
@@ -329,34 +272,6 @@ func (o *Operations) DisableSparseCheckout() error {
 		"git sparse-checkout disable",
 		"Disable sparse-checkout",
 	)
-}
-
-// ApplyCheckout applies sparse-checkout changes by reading the tree
-func (o *Operations) ApplyCheckout() error {
-	return o.commander.RunCommand(
-		"git read-tree -m -u HEAD",
-		"Apply checkout changes",
-	)
-}
-
-// IsRepository checks if the current directory is a Git repository
-func (o *Operations) IsRepository() (bool, error) {
-	_, err := o.runCommandInContext("git rev-parse --git-dir", "")
-	if err != nil {
-		// If the command fails, it's likely not a git repository
-		return false, nil
-	}
-	return true, nil
-}
-
-// GetCommitHash returns the current commit hash
-func (o *Operations) GetCommitHash() (string, error) {
-	return o.runCommandInContext("git rev-parse HEAD", "Get commit hash")
-}
-
-// GetShortCommitHash returns the short current commit hash
-func (o *Operations) GetShortCommitHash() (string, error) {
-	return o.runCommandInContext("git rev-parse --short HEAD", "Get short commit hash")
 }
 
 // GetRepositoryRoot uses Git to find the top-level repository directory
