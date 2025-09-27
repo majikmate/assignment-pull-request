@@ -1,10 +1,12 @@
 # Git Hooks Documentation
 
-This document describes all supported Git hooks and their parameters in the assignment-pull-request system.
+This document describes all supported Git hooks and their parameters in the
+assignment-pull-request system.
 
 ## Overview
 
 The assignment-pull-request system uses Git hooks to:
+
 - Configure sparse checkout for assignment-based development
 - Protect paths from unauthorized modifications
 - Automatically manage repository state based on workflow configurations
@@ -18,16 +20,21 @@ The system supports the following Git hooks that modify the working tree:
 **Triggered**: After a successful `git checkout` or `git switch`
 
 **Parameters**:
+
 - `$1` (previous HEAD): The ref of the previous HEAD
-- `$2` (new HEAD): The ref of the new HEAD  
-- `$3` (branch checkout flag): `1` if checking out a branch, `0` if checking out a file
+- `$2` (new HEAD): The ref of the new HEAD
+- `$3` (branch checkout flag): `1` if checking out a branch, `0` if checking out
+  a file
 
 **Behavior**:
+
 - **Sparse Checkout**: Only processed when `$3 = 1` (branch checkout)
 - **Protected Paths**: Always processed
-- **Use Cases**: Switch between assignment branches, initialize assignment workspace
+- **Use Cases**: Switch between assignment branches, initialize assignment
+  workspace
 
 **Example Usage**:
+
 ```bash
 # Branch checkout - triggers both sparse checkout and path protection
 git checkout assignment-1
@@ -41,14 +48,17 @@ git checkout HEAD -- somefile.txt
 **Triggered**: After a successful `git merge`
 
 **Parameters**:
+
 - `$1` (squash flag): `1` if the merge was a squash merge, `0` otherwise
 
 **Behavior**:
+
 - **Sparse Checkout**: Not processed
 - **Protected Paths**: Always processed
 - **Use Cases**: Merge changes while maintaining path protections
 
 **Example Usage**:
+
 ```bash
 # Regular merge - triggers path protection
 git merge feature-branch
@@ -59,17 +69,21 @@ git merge --squash feature-branch
 
 ### 3. post-rewrite
 
-**Triggered**: After commands that rewrite commits (`git rebase`, `git commit --amend`)
+**Triggered**: After commands that rewrite commits (`git rebase`,
+`git commit --amend`)
 
 **Parameters**:
+
 - `$1` (command): The command that triggered the rewrite (`rebase` or `amend`)
 
 **Behavior**:
+
 - **Sparse Checkout**: Not processed
 - **Protected Paths**: Always processed
 - **Use Cases**: Maintain protections after commit rewrites
 
 **Example Usage**:
+
 ```bash
 # Interactive rebase - triggers path protection
 git rebase -i HEAD~3
@@ -83,14 +97,17 @@ git commit --amend
 **Triggered**: After `git am` applies a patch
 
 **Parameters**:
+
 - No parameters
 
 **Behavior**:
+
 - **Sparse Checkout**: Not processed
 - **Protected Paths**: Always processed
 - **Use Cases**: Apply patches while maintaining protections
 
 **Example Usage**:
+
 ```bash
 # Apply patch series - triggers path protection for each patch
 git am patch-series/*.patch
@@ -101,14 +118,17 @@ git am patch-series/*.patch
 **Triggered**: After a successful `git commit`
 
 **Parameters**:
+
 - No parameters
 
 **Behavior**:
+
 - **Sparse Checkout**: Not processed
 - **Protected Paths**: Always processed
 - **Use Cases**: Maintain protections after commits
 
 **Example Usage**:
+
 ```bash
 # Regular commit - triggers path protection
 git commit -m "Add solution"
@@ -122,14 +142,17 @@ git commit --amend --no-edit
 **Triggered**: After `git reset`
 
 **Parameters**:
+
 - No parameters
 
 **Behavior**:
+
 - **Sparse Checkout**: Not processed
 - **Protected Paths**: Always processed
 - **Use Cases**: Maintain protections after reset operations
 
 **Example Usage**:
+
 ```bash
 # Soft reset - triggers path protection
 git reset --soft HEAD~1
@@ -164,17 +187,17 @@ Hooks read configuration from workflow YAML files (`.github/workflows/*.yml`):
 
 ```yaml
 jobs:
-  example:
-    steps:
-      - uses: majikmate/assignment-pull-request@v1
-        with:
-          assignment-regex: |
-            ^assignments/(assignment-\d+)$
-            ^homework/(hw-\d+)$
-          protected-paths-regex: |
-            ^.devcontainer$
-            ^.github$
-            ^tutorials$
+    example:
+        steps:
+            - uses: majikmate/assignment-pull-request@v1
+              with:
+                  assignment-regex: |
+                      ^assignments/(assignment-\d+)$
+                      ^homework/(hw-\d+)$
+                  protected-paths-regex: |
+                      ^.devcontainer$
+                      ^.github$
+                      ^tutorials$
 ```
 
 ## Hook Installation
@@ -185,9 +208,9 @@ Automatically installs all hooks via the `protected-paths` DevContainer feature:
 
 ```json
 {
-  "features": {
-    "ghcr.io/majikmate/assignment-pull-request/protected-paths:1": {}
-  }
+    "features": {
+        "ghcr.io/majikmate/assignment-pull-request/protected-paths:1": {}
+    }
 }
 ```
 
@@ -238,16 +261,21 @@ Hook logs are written to stderr and can be viewed in the terminal output.
 Hooks are designed to be non-disruptive:
 
 - **Installation Failures**: Skip hook execution, don't fail Git operation
-- **Network Issues**: Use cached binaries, continue with degraded functionality  
+- **Network Issues**: Use cached binaries, continue with degraded functionality
 - **Permission Errors**: Log warnings, don't fail Git operation
 - **Configuration Errors**: Use defaults, continue processing
 
 ## Security Considerations
 
-- Hooks run with user permissions but create root-owned protected files
+- Hooks run as regular user but escalate to dedicated `prot` user for path
+  protection
 - Binary updates are verified against the official GitHub repository
-- Protected paths cannot be modified by non-root users
+- Protected paths are owned by `prot:prot` and cannot be modified by regular
+  users
+- Development user is added to `prot` group for read access to protected files
 - Sparse checkout restrictions prevent access to hidden assignments
+- No root privileges required - uses dedicated system user for security
+  isolation
 
 ## Troubleshooting
 

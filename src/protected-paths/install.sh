@@ -18,6 +18,25 @@ fi
 # Use the devcontainer remote user (always available in devcontainer features)
 OWNER_USER="${_REMOTE_USER:-vscode}"
 
+# --- Create dedicated prot:prot user/group for protected path ownership ---
+echo "Creating prot user/group for protected path ownership..."
+
+# Create prot group if it doesn't exist
+if ! getent group prot >/dev/null 2>&1; then
+    sudo groupadd --system prot
+    echo "Created prot group"
+fi
+
+# Create prot user if it doesn't exist  
+if ! getent passwd prot >/dev/null 2>&1; then
+    sudo useradd --system --gid prot --home-dir /nonexistent --shell /usr/sbin/nologin prot
+    echo "Created prot user"
+fi
+
+# Add dev user to prot group for read access to protected files
+sudo usermod -a -G prot "$OWNER_USER"
+echo "Added $OWNER_USER to prot group"
+
 # --- Install global hooks path ---
 sudo mkdir -p /etc/git/hooks
 sudo git config --system core.hooksPath /etc/git/hooks
@@ -33,20 +52,21 @@ done
 # --- Install backup protect-sync script ---
 sudo install -m 0755 scripts/protect-sync /usr/local/bin/protect-sync
 
-# --- Grant minimal sudo (NOPASSWD) for the githook binary to the dev user ---
-# This allows the hook to run the githook binary with root privileges for path protection
+# --- Grant minimal sudo (NOPASSWD) for running githook as prot user ---
+# This allows the hook to run the githook binary as prot user for path protection
 sudo bash -c "cat > /etc/sudoers.d/githook-protect <<EOF
-# Allow $OWNER_USER to run githook with root privileges for path protection
-$OWNER_USER ALL=(root) NOPASSWD: $(go env GOPATH 2>/dev/null || echo "/home/$OWNER_USER/go")/bin/githook
-$OWNER_USER ALL=(root) NOPASSWD: /usr/local/bin/githook
+# Allow $OWNER_USER to run githook as prot user for path protection
+$OWNER_USER ALL=(prot) NOPASSWD: $(go env GOPATH 2>/dev/null || echo "/home/$OWNER_USER/go")/bin/githook
+$OWNER_USER ALL=(prot) NOPASSWD: /usr/local/bin/githook
 # Allow backup protect-sync script (legacy support)
-$OWNER_USER ALL=(root) NOPASSWD: /usr/local/bin/protect-sync
+$OWNER_USER ALL=(prot) NOPASSWD: /usr/local/bin/protect-sync
 EOF"
 sudo chmod 440 /etc/sudoers.d/githook-protect
 
-echo "[protected-paths] Git hooks installed. Dev user: $OWNER_USER."
+echo "[protected-paths] Git hooks installed. Dev user: $OWNER_USER, Protection user: prot."
 echo "Features:"
 echo "  - Assignment-based sparse checkout (post-checkout branch changes)"
 echo "  - Protected path synchronization (all working tree modifications)"
 echo "  - Automatic configuration from workflow YAML files"
 echo "  - Go-based implementation with bash backup script"
+echo "  - Secure: hooks run as dedicated prot user, not root"

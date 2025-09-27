@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -14,7 +15,7 @@ import (
 )
 
 const (
-	rootOwner    = "root:root"
+	protOwner    = "prot:prot"
 	dirMode      = "0755"
 	fileMode     = "0644"
 	stagePrefix  = "protect-sync-stage-"
@@ -38,14 +39,18 @@ func New(repositoryRoot string) *Processor {
 // 1. Find protected paths using regex patterns
 // 2. Check for unmerged entries under protected paths  
 // 3. Extract files from HEAD for protected paths
-// 4. Mirror to working tree with root ownership and permissions
+// 4. Mirror to working tree with prot ownership and permissions
 // 5. Apply skip-worktree flags
 func (p *Processor) ProtectPaths(protectedFoldersPattern *regex.Processor) error {
 	fmt.Printf("🔒 Starting path protection (protect-sync logic)...\n")
 
-	// Must be running as root (called via sudo)
-	if os.Geteuid() != 0 {
-		return fmt.Errorf("protect-sync must run as root (via sudo)")
+	// Must be running as prot user (called via sudo -u prot)
+	currentUser, err := user.Current()
+	if err != nil {
+		return fmt.Errorf("failed to get current user: %w", err)
+	}
+	if currentUser.Username != "prot" {
+		return fmt.Errorf("protect-sync must run as prot user (via sudo -u prot)")
 	}
 
 	// Find protected paths using patterns
@@ -166,9 +171,9 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPaths []string) (string, erro
 	return stageDir, nil
 }
 
-// mirrorToWorkingTree syncs the snapshot to working tree with root ownership
+// mirrorToWorkingTree syncs the snapshot to working tree with prot ownership
 func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPaths []string) error {
-	fmt.Printf("  Mirroring to working tree with root ownership...\n")
+	fmt.Printf("  Mirroring to working tree with prot ownership...\n")
 
 	for _, protectedPath := range protectedPaths {
 		if err := p.syncPath(stageDir, protectedPath); err != nil {
@@ -203,7 +208,7 @@ func (p *Processor) syncPath(stageDir, protectedPath string) error {
 	// Use rsync for reliable synchronization
 	rsyncCmd := exec.Command("rsync", "-a", "--delete",
 		"--no-perms", "--no-owner", "--no-group", "--omit-dir-times",
-		fmt.Sprintf("--chown=%s", rootOwner),
+		fmt.Sprintf("--chown=%s", protOwner),
 		srcPath+"/", dstPath+"/")
 
 	if output, err := rsyncCmd.CombinedOutput(); err != nil {
