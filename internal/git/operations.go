@@ -95,18 +95,16 @@ func NewOperationsWithDir(dryRun bool, workDir string) *Operations {
 	}
 }
 
-
-
 // Helper function to parse branch listing output
 func (o *Operations) parseBranchList(output string, isRemote bool, excludeBranch string) map[string]bool {
 	branches := make(map[string]bool)
-	
+
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		
+
 		var branchName string
 		if isRemote {
 			// Skip HEAD references and symbolic references
@@ -121,13 +119,13 @@ func (o *Operations) parseBranchList(output string, isRemote bool, excludeBranch
 			// Format: "* main" or "  branch-name"
 			branchName = strings.TrimSpace(strings.TrimPrefix(line, "*"))
 		}
-		
+
 		// Add branch if it's valid and not excluded
 		if branchName != "" && branchName != excludeBranch {
 			branches[branchName] = true
 		}
 	}
-	
+
 	return branches
 }
 
@@ -333,8 +331,6 @@ func (o *Operations) DisableSparseCheckout() error {
 	)
 }
 
-
-
 // ApplyCheckout applies sparse-checkout changes by reading the tree
 func (o *Operations) ApplyCheckout() error {
 	return o.commander.RunCommand(
@@ -383,34 +379,34 @@ func (o *Operations) FindGitDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to find git directory: %w", err)
 	}
-	
+
 	// If gitDir is relative and we have a working directory, make it absolute
 	if o.workDir != "" && !filepath.IsAbs(gitDir) {
 		gitDir = filepath.Join(o.workDir, gitDir)
 	}
-	
+
 	// Clean the path to remove any redundant elements
 	gitDir = filepath.Clean(gitDir)
-	
+
 	// Verify the git directory exists and is accessible
 	if _, err := os.Stat(gitDir); err != nil {
 		return "", fmt.Errorf("git directory not accessible: %w", err)
 	}
-	
+
 	// Verify it's actually a git directory by checking for essential git files/directories
 	essentialPaths := []string{
-		"HEAD",        // Required: points to current branch
-		"refs",        // Required: directory containing references
-		"objects",     // Required: directory containing git objects
+		"HEAD",    // Required: points to current branch
+		"refs",    // Required: directory containing references
+		"objects", // Required: directory containing git objects
 	}
-	
+
 	for _, path := range essentialPaths {
 		fullPath := filepath.Join(gitDir, path)
 		if _, err := os.Stat(fullPath); err != nil {
 			return "", fmt.Errorf("missing essential git component '%s': %w", path, err)
 		}
 	}
-	
+
 	return gitDir, nil
 }
 
@@ -419,19 +415,19 @@ func (o *Operations) CheckUnmergedEntries(paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
-	
+
 	pathsStr := strings.Join(paths, " ")
 	command := fmt.Sprintf("git ls-files -u -- %s", pathsStr)
-	
+
 	output, err := o.runCommandInContext(command, "Check for unmerged entries")
 	if err != nil {
 		return fmt.Errorf("failed to check for unmerged entries: %w", err)
 	}
-	
+
 	if strings.TrimSpace(output) != "" {
 		return fmt.Errorf("conflicts found in protected paths - resolve first")
 	}
-	
+
 	return nil
 }
 
@@ -440,7 +436,7 @@ func (o *Operations) BuildSnapshotFromHEAD(paths []string, stageDir string) erro
 	if len(paths) == 0 {
 		return nil
 	}
-	
+
 	pathsStr := strings.Join(paths, " ")
 	commands := []string{
 		// Create temporary index file (separate from .git/index)
@@ -455,7 +451,7 @@ func (o *Operations) BuildSnapshotFromHEAD(paths []string, stageDir string) erro
 		fmt.Sprintf("  GIT_INDEX_FILE=\"$TMPIDX\" git checkout-index -a --prefix='%s/' >/dev/null", stageDir),
 		"fi",
 	}
-	
+
 	command := strings.Join(commands, " && ")
 	_, err := o.runCommandInContext(command, "Build snapshot from HEAD")
 	return err
@@ -466,7 +462,7 @@ func (o *Operations) ApplySkipWorktreeFlags(paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
-	
+
 	pathsStr := strings.Join(paths, " ")
 	command := fmt.Sprintf("git ls-files -z -- %s | xargs -0 -r git update-index --skip-worktree", pathsStr)
 	_, err := o.runCommandInContext(command, "Apply skip-worktree flags")
@@ -479,26 +475,26 @@ func (o *Operations) runCommandInContext(command, description string) (string, e
 		// Use exec.Command directly when we need to set working directory
 		cmd := exec.Command("sh", "-c", command)
 		cmd.Dir = o.workDir
-		
+
 		if o.commander.dryRun {
 			if description != "" {
 				fmt.Printf("[DRY RUN] %s: %s (in %s)\n", description, command, o.workDir)
 			}
 			return "", nil
 		}
-		
+
 		if description != "" {
 			fmt.Printf("%s: %s (in %s)\n", description, command, o.workDir)
 		}
-		
+
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("error running command '%s': %w\nOutput: %s", command, err, string(output))
 		}
-		
+
 		return strings.TrimSpace(string(output)), nil
 	}
-	
+
 	// Use commander for current directory operations
 	return o.commander.RunCommandWithOutput(command, description)
 }
