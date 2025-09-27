@@ -220,10 +220,6 @@ if ! getent passwd majikmate >/dev/null 2>&1; then
     echo "   Created majikmate user"
 fi
 
-# Add dev user to majikmate group for read access to protected files
-sudo usermod -a -G majikmate "$OWNER_USER"
-echo "   Added $OWNER_USER to majikmate group"
-
 # --- Install global hooks path and git configuration ---
 echo "🔧 Configuring global Git hooks path..."
 sudo mkdir -p /etc/git/hooks
