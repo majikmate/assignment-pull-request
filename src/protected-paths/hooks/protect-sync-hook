@@ -34,8 +34,9 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 # Change to repository root
 cd "$REPO_ROOT"
 
-# Run githook as majikmate user for path protection
-sudo -u majikmate "$BINARY_PATH" "$HOOK_TYPE" "$@" || {
+# Run the hook logic as the dev user (most operations)
+# Only elevate to majikmate for the file ownership operations
+"$BINARY_PATH" "$HOOK_TYPE" "$@" || {
     echo "githook failed for $HOOK_TYPE" >&2
     exit 0  # Don't fail the git operation
 }

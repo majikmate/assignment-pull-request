@@ -2,7 +2,7 @@
 
 # GitHub Post-Checkout Hook Installer
 # This script installs the assignment-pull-request git hooks in exactly the same way 
-# as the devcontainer feature, with the exception that it checks if the current folder 
+# as the devcontainer feature, with the exception that it checks if the current folder
 # is a complete source tree and installs from that source tree, otherwise installs 
 # from the remote module.
 #
@@ -19,24 +19,10 @@ set -euo pipefail
 REPO="majikmate/assignment-pull-request"
 MODULE="github.com/majikmate/assignment-pull-request"
 BINARY_NAME="githook"
-HOOK_NAME="protect-sync-hook"
 OWNER_USER="${USER:-vscode}"
 VERSION_ARG="${1:-}"
 
 echo "🔧 Installing Assignment Pull Request git hooks..."
-
-# --- Detect distro package manager ---
-if command -v apt-get >/dev/null 2>&1; then
-  PKG="apt-get"
-  sudo apt-get update -y
-  sudo apt-get install -y --no-install-recommends git rsync sudo ca-certificates
-elif command -v apk >/dev/null 2>&1; then
-  PKG="apk"
-  sudo apk add --no-cache git rsync sudo ca-certificates shadow bash
-else
-  echo "Unsupported distro: need apt-get or apk" >&2
-  exit 1
-fi
 
 # Function to check if current directory is a complete source tree
 function is_complete_source_tree() {
@@ -47,6 +33,14 @@ function is_complete_source_tree() {
     [[ -f "src/protected-paths/hooks/protect-sync-hook" ]] && \
     grep -q "module.*assignment-pull-request" go.mod 2>/dev/null
 }
+
+# Source common installation functions conditionally
+if is_complete_source_tree; then
+    # For local installs, source from current directory
+    source "$(dirname "$0")/src/protected-paths/scripts/common-install.sh"
+    # Install dependencies
+    install_dependencies
+fi
 
 # Function to install from local source tree
 function install_from_source_tree() {
@@ -63,10 +57,14 @@ function install_from_source_tree() {
     echo "   🔨 Building githook binary..."
     go build -o "${GOBIN:-$(go env GOPATH)/bin}/$BINARY_NAME" ./cmd/githook
     
-    # Install the shared git hook (calls githook binary) from local files
-    sudo install -m 0755 src/protected-paths/hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
+    # Install hooks and wrapper
+    install_hooks_and_wrapper "src/protected-paths/hooks" "src/protected-paths/scripts"
     
-    echo "   ✅ Installed from local source tree"
+    # Patch the hook for development mode - minimal invasive patch
+    echo "   🔧 Patching protect-sync-hook for development mode..."
+    sudo sed -i 's/^if go install/if false \&\& go install/' /etc/git/hooks/protect-sync-hook
+    
+    echo "   ✅ Installed from local source tree (development mode - auto-update disabled)"
 }
 
 # Function to resolve version to clone
@@ -164,6 +162,17 @@ function resolve_version_to_clone() {
 function install_from_remote() {
     echo "   🌐 Installing from remote repository..."
     
+    # Install dependencies first (before Go check since we need git for cloning)
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -y
+        sudo apt-get install -y --no-install-recommends git rsync sudo ca-certificates
+    elif command -v apk >/dev/null 2>&1; then
+        sudo apk add --no-cache git rsync sudo ca-certificates shadow bash
+    else
+        echo "Unsupported distro: need apt-get or apk" >&2
+        exit 1
+    fi
+    
     # Check if Go is available
     if ! command -v go >/dev/null 2>&1; then
         echo "   ❌ Go is required to build from remote repository"
@@ -192,43 +201,34 @@ function install_from_remote() {
         fi
     fi
     
+    # Now source the common functions from the downloaded repo
+    source src/protected-paths/scripts/common-install.sh
+    
     # Install the githook binary from the cloned source
     echo "   🔨 Installing githook binary from cloned source..."
     go install ./cmd/${BINARY_NAME}
     
-    # Install the shared git hook (calls githook binary)
-    sudo install -m 0755 src/protected-paths/hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
+    # Install hooks and wrapper using common functions
+    install_hooks_and_wrapper "src/protected-paths/hooks" "src/protected-paths/scripts"
     
     # Return to original directory (trap will handle cleanup)
     cd - >/dev/null
     
+    # Now perform the common setup tasks using the functions we just sourced
+    create_majikmate_user "$OWNER_USER"
+    setup_git_hooks_path
+    create_hook_symlinks
+    configure_sudo_permissions "$OWNER_USER"
+    print_installation_summary "$OWNER_USER" "standalone"
+    
     echo "   ✅ Installed from remote repository"
 }
 
-# --- Create dedicated majikmate:majikmate user/group for protected path ownership ---
-echo "📱 Creating majikmate user/group for protected path ownership..."
+# --- Create majikmate user/group ---
+create_majikmate_user "$OWNER_USER"
 
-# Create majikmate group if it doesn't exist
-if ! getent group majikmate >/dev/null 2>&1; then
-    sudo groupadd --system majikmate
-    echo "   Created majikmate group"
-fi
-
-# Create majikmate user if it doesn't exist  
-if ! getent passwd majikmate >/dev/null 2>&1; then
-    sudo useradd --system --gid majikmate --home-dir /nonexistent --shell /usr/sbin/nologin majikmate
-    echo "   Created majikmate user"
-fi
-
-# Add dev user to majikmate group for read access to protected files
-sudo usermod -a -G majikmate "$OWNER_USER"
-echo "   Added $OWNER_USER to majikmate group"
-
-# --- Install global hooks path ---
-echo "� Configuring global Git hooks path..."
-sudo mkdir -p /etc/git/hooks
-sudo git config --system core.hooksPath /etc/git/hooks
-echo "   Set core.hooksPath to /etc/git/hooks"
+# --- Setup git hooks path ---
+setup_git_hooks_path
 
 # --- Install hooks and binaries ---
 echo "📥 Installing hooks and binaries..."
@@ -243,49 +243,21 @@ fi
 # Check if we're in a complete source tree and install accordingly
 if is_complete_source_tree; then
     install_from_source_tree
+    
+    # --- Create majikmate user/group ---
+    create_majikmate_user "$OWNER_USER"
+    
+    # --- Setup git hooks path ---
+    setup_git_hooks_path
+    
+    # Create symbolic links for all post-* hooks that modify the working tree
+    create_hook_symlinks
+    
+    # --- Grant minimal sudo (NOPASSWD) for protected path operations ---
+    configure_sudo_permissions "$OWNER_USER"
+    
+    # --- Print installation summary ---
+    print_installation_summary "$OWNER_USER" "standalone"
 else
     install_from_remote
 fi
-
-# Create symbolic links for all post-* hooks that modify the working tree
-echo "🔗 Creating hook symlinks..."
-for hook in post-checkout post-merge post-rewrite post-applypatch post-commit post-reset; do
-  sudo ln -sf protect-sync-hook "/etc/git/hooks/$hook"
-  echo "   Linked $hook -> protect-sync-hook"
-done
-
-# --- Grant minimal sudo (NOPASSWD) for running githook as majikmate user ---
-echo "🔐 Configuring sudo permissions..."
-# This allows the hook to run the githook binary as majikmate user for path protection
-
-GOPATH_DIR="$(go env GOPATH 2>/dev/null || echo "/home/$OWNER_USER/go")"
-
-sudo tee /etc/sudoers.d/githook-protect > /dev/null <<EOF
-# Allow $OWNER_USER to run githook as majikmate user for path protection
-$OWNER_USER ALL=(majikmate) NOPASSWD: $GOPATH_DIR/bin/githook
-EOF
-
-sudo chmod 440 /etc/sudoers.d/githook-protect
-echo "   Configured sudo permissions for $OWNER_USER"
-
-echo "✅ Git hooks installed successfully!"
-echo ""
-echo "🎯 Features:"
-echo "   - Assignment-based sparse checkout (post-checkout branch changes)"
-echo "   - Protected path synchronization (all working tree modifications)"
-echo "   - Automatic configuration from workflow YAML files"
-echo "   - Go-based implementation"
-echo "   - Secure: hooks run as dedicated majikmate user, not root"
-echo ""
-echo "👤 Users configured:"
-echo "   - Dev user: $OWNER_USER (member of majikmate group)"
-echo "   - Protection user: majikmate (system user for file ownership)"
-echo ""
-echo "🔧 Hook configuration:"
-echo "   - Global hooks path: /etc/git/hooks"
-echo "   - Active hooks: post-checkout, post-merge, post-rewrite, post-applypatch, post-commit, post-reset"
-echo ""
-echo "🗑️  To uninstall:"
-echo "   sudo rm -f /etc/git/hooks/post-* /etc/git/hooks/protect-sync-hook"
-echo "   sudo rm -f /etc/sudoers.d/githook-protect"
-echo "   sudo git config --system --unset core.hooksPath"

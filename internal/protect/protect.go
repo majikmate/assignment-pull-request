@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -53,15 +52,6 @@ func (p *Processor) ProtectPaths(protectedFoldersPattern *regex.Processor) error
 			fmt.Printf("Warning: failed to release protect-paths lock: %v\n", releaseErr)
 		}
 	}()
-
-	// Must be running as majikmate user (called via sudo -u majikmate)
-	currentUser, err := user.Current()
-	if err != nil {
-		return fmt.Errorf("failed to get current user: %w", err)
-	}
-	if currentUser.Username != mmUser {
-		return fmt.Errorf("protect-sync must run as %s user (via sudo -u %s)", mmUser, mmUser)
-	}
 
 	// Find protected paths using patterns
 	protectedPathsInfo, err := p.findProtectedPaths(protectedFoldersPattern)
@@ -188,15 +178,12 @@ func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *pat
 		return nil
 	}
 
-	// Use rsync to atomically sync all protected paths from staging to working tree
-	// Permissions are already set in staging area, so rsync will preserve them atomically
+	// Use secure githook-rsync wrapper for file ownership operations
+	// This wrapper validates arguments and only allows the specific operation we need
 	// Source needs trailing slash to sync directory contents, destination should not have trailing slash
 	rsyncSource := filepath.Join(stageDir, "") + string(filepath.Separator) // Ensure trailing slash
 	rsyncDest := filepath.Clean(p.repositoryRoot)                           // Clean path, no trailing slash
-	rsyncCmd := exec.Command("rsync", "-av", "--delete",
-		"--no-owner", "--no-group", "--omit-dir-times",
-		fmt.Sprintf("--chown=%s", mmOwner),
-		rsyncSource, rsyncDest)
+	rsyncCmd := exec.Command("sudo", "/etc/git/hooks/githook-rsync", rsyncSource, rsyncDest)
 
 	fmt.Printf("    Executing atomic rsync for all protected paths...\n")
 	output, err := rsyncCmd.CombinedOutput()
