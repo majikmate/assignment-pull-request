@@ -34,8 +34,8 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 # Change to repository root
 cd "$REPO_ROOT"
 
-# Run githook with hook type and all original arguments
-"$BINARY_PATH" "$HOOK_TYPE" "$@" || {
+# Run githook with root privileges for path protection
+sudo "$BINARY_PATH" "$HOOK_TYPE" "$@" || {
     echo "githook failed for $HOOK_TYPE" >&2
     exit 0  # Don't fail the git operation
 }

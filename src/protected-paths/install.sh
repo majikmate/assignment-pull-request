@@ -33,18 +33,14 @@ done
 # --- Install backup protect-sync script ---
 sudo install -m 0755 scripts/protect-sync /usr/local/bin/protect-sync
 
-# --- Grant minimal sudo (NOPASSWD) for the githook binary and related commands to the dev user ---
-# This allows the githook to run with root privileges for path protection
+# --- Grant minimal sudo (NOPASSWD) for the githook binary to the dev user ---
+# This allows the hook to run the githook binary with root privileges for path protection
 sudo bash -c "cat > /etc/sudoers.d/githook-protect <<EOF
 # Allow $OWNER_USER to run githook with root privileges for path protection
 $OWNER_USER ALL=(root) NOPASSWD: $(go env GOPATH 2>/dev/null || echo "/home/$OWNER_USER/go")/bin/githook
 $OWNER_USER ALL=(root) NOPASSWD: /usr/local/bin/githook
 # Allow backup protect-sync script (legacy support)
 $OWNER_USER ALL=(root) NOPASSWD: /usr/local/bin/protect-sync
-# Allow rsync and chown commands needed for path protection
-$OWNER_USER ALL=(root) NOPASSWD: /usr/bin/rsync
-$OWNER_USER ALL=(root) NOPASSWD: /bin/chown
-$OWNER_USER ALL=(root) NOPASSWD: /bin/chmod
 EOF"
 sudo chmod 440 /etc/sudoers.d/githook-protect
 
