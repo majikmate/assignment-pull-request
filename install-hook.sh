@@ -126,41 +126,10 @@ function resolve_version_to_clone() {
     echo "$version"
 }
 
-# Function to install from local source tree
-function install_from_source_tree() {
-    echo "   📁 Installing from local source tree..."
+# Function to clone remote repository when needed
+function clone_remote_repository() {
+    echo "   🌐 Cloning remote repository..."
     
-    # Check if Go is available
-    if ! command -v go >/dev/null 2>&1; then
-        echo "   ❌ Go is required to build from source"
-        echo "      Please install Go or run from a different location"
-        exit 1
-    fi
-
-    # Build the githook binary
-    echo "   🔨 Building githook binary..."
-    go build -o "${GOBIN:-$(go env GOPATH)/bin}/$BINARY_NAME" ./cmd/githook
-    
-    # Install the shared git hook (calls githook binary) from local files
-    sudo install -m 0755 src/protected-paths/hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
-    
-    # Install the secure rsync wrapper
-    sudo install -m 755 src/protected-paths/scripts/githook-rsync /etc/git/hooks/githook-rsync
-    
-    echo "   ✅ Installed from local source tree"
-}
-
-# Function to install from remote module
-function install_from_remote() {
-    echo "   🌐 Installing from remote repository..."
-    
-    # Check if Go is available
-    if ! command -v go >/dev/null 2>&1; then
-        echo "   ❌ Go is required to build from remote repository"
-        echo "      Please install Go"
-        exit 1
-    fi
-
     # Create temporary directory and set up cleanup trap
     TEMP_DIR=$(mktemp -d)
     trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -182,9 +151,31 @@ function install_from_remote() {
         fi
     fi
     
-    # Install the githook binary from the cloned source
-    echo "   🔨 Installing githook binary from cloned source..."
-    go install ./cmd/${BINARY_NAME}
+    echo "   ✅ Repository cloned successfully"
+}
+
+# Function to install hooks and binaries (local or remote)
+function install_hooks_and_binaries() {
+    local is_local_source=$1
+    
+    if [ "$is_local_source" = "true" ]; then
+        echo "   📁 Installing from local source tree..."
+    else
+        echo "   🌐 Installing from remote repository..."
+        # Clone the remote repository first
+        clone_remote_repository
+    fi
+    
+    # Check if Go is available
+    if ! command -v go >/dev/null 2>&1; then
+        echo "   ❌ Go is required to install from source"
+        echo "      Please install Go"
+        exit 1
+    fi
+
+    # Install the githook binary
+    echo "   🔨 Installing githook binary..."
+    go install ./cmd/githook
     
     # Install the shared git hook (calls githook binary)
     sudo install -m 0755 src/protected-paths/hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
@@ -192,10 +183,13 @@ function install_from_remote() {
     # Install the secure rsync wrapper
     sudo install -m 755 src/protected-paths/scripts/githook-rsync /etc/git/hooks/githook-rsync
     
-    # Return to original directory (trap will handle cleanup)
-    cd - >/dev/null
-    
-    echo "   ✅ Installed from remote repository"
+    if [ "$is_local_source" = "true" ]; then
+        echo "   ✅ Installed from local source tree"
+    else
+        # Return to original directory (trap will handle cleanup)
+        cd - >/dev/null
+        echo "   ✅ Installed from remote repository"
+    fi
 }
 
 # --- Detect distro package manager and install dependencies ---
@@ -248,9 +242,9 @@ fi
 
 # Check if we're in a complete source tree and install accordingly
 if is_complete_source_tree; then
-    install_from_source_tree
+    install_hooks_and_binaries "true"
 else
-    install_from_remote
+    install_hooks_and_binaries "false"
 fi
 
 # Create symbolic links for all post-* hooks that modify the working tree
