@@ -1,0 +1,8 @@
+{
+    "name": "Protected Paths (Git)",
+    "id": "protected-paths",
+    "version": "1.0.0",
+    "description": "Enforce root-owned protected folders and assignment-based sparse checkout via global git hooks. Automatically configures based on workflow YAML files in the repository.",
+    "documentationURL": "https://github.com/majikmate/assignment-pull-request/tree/main/src/protected-paths",
+    "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}

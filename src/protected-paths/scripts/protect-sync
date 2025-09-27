@@ -1,10 +1,38 @@
 #!/usr/bin/env bash
+# LEGACY BACKUP SCRIPT: This functionality is now implemented in Go (githook binary)
+# This script is kept as a backup and for environments where Go is not available
 # Enforce root-owned protected prefixes from HEAD into the working tree.
 # Linux-only. Uses temp index + checkout-index to stage files, then rsync to WT.
 set -euo pipefail
 
 REPO="${1:-}"
 [[ -n "$REPO" && -d "$REPO/.git" ]] || { echo "Usage: $0 /path/to/repo"; exit 2; }
+
+# ---- Determine protected prefixes ----
+# Priority 1: repo .protected-paths (one per line, comments allowed)
+# Priority 2: /etc/protected-paths.conf env-like (PROTECTED_PATHS_DEFAULT=a,b)
+# Priority 3: environment PROTECTED_PATHS_DEFAULT
+declare -a PROTECTED_PATHS
+
+CFG_FILE="$REPO/.protected-paths"
+if [[ -f "$CFG_FILE" ]]; then
+  mapfile -t PROTECTED_PATHS < <(sed -e '/^\s*#/d' -e '/^\s*$/d' "$CFG_FILE")
+else
+  if [[ -f /etc/protected-paths.conf ]]; then
+    # shellcheck disable=SC1091
+    source /etc/protected-paths.conf || true
+  fi
+  IFS=',' read -r -a PROTECTED_PATHS <<< "${PROTECTED_PATHS_DEFAULT:-}"
+fi
+# Normalize: strip leading ./ and trailing slashes
+_norm() { sed -E 's#^\.\/##; s#/*$##' | sed -E 's#^$##'; }
+TMP_LIST=()
+for p in "${PROTECTED_PATHS[@]:-}"; do
+  q="$(printf '%s\n' "$p" | _norm)"
+  [[ -n "$q" ]] && TMP_LIST+=("$q")
+done
+PROTECTED_PATHS=("${TMP_LIST[@]}")
+[[ ${#PROTECTED_PATHS[@]} -gt 0 ]] || { echo "protect-sync: no protected paths defined; skipping."; exit 0; }
 
 # ---- Policy knobs ----
 OWNER="root:root"

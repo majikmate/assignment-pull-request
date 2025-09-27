@@ -23,19 +23,24 @@ sudo mkdir -p /etc/git/hooks
 sudo git config --system core.hooksPath /etc/git/hooks
 
 # --- Install the shared git hook (calls githook binary) ---
-sudo install -m 0755 protect-sync-hook /etc/git/hooks/protect-sync-hook
+sudo install -m 0755 hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
 
 # Create symbolic links for all post-* hooks that modify the working tree
 for hook in post-checkout post-merge post-rewrite post-applypatch post-commit post-reset; do
   sudo ln -sf protect-sync-hook "/etc/git/hooks/$hook"
 done
 
-# --- Grant minimal sudo (NOPASSWD) for the githook binary to the dev user ---
+# --- Install backup protect-sync script ---
+sudo install -m 0755 scripts/protect-sync /usr/local/bin/protect-sync
+
+# --- Grant minimal sudo (NOPASSWD) for the githook binary and related commands to the dev user ---
 # This allows the githook to run with root privileges for path protection
 sudo bash -c "cat > /etc/sudoers.d/githook-protect <<EOF
 # Allow $OWNER_USER to run githook with root privileges for path protection
-$OWNER_USER ALL=(root) NOPASSWD: $(go env GOPATH)/bin/githook
+$OWNER_USER ALL=(root) NOPASSWD: $(go env GOPATH 2>/dev/null || echo "/home/$OWNER_USER/go")/bin/githook
 $OWNER_USER ALL=(root) NOPASSWD: /usr/local/bin/githook
+# Allow backup protect-sync script (legacy support)
+$OWNER_USER ALL=(root) NOPASSWD: /usr/local/bin/protect-sync
 # Allow rsync and chown commands needed for path protection
 $OWNER_USER ALL=(root) NOPASSWD: /usr/bin/rsync
 $OWNER_USER ALL=(root) NOPASSWD: /bin/chown
@@ -43,7 +48,9 @@ $OWNER_USER ALL=(root) NOPASSWD: /bin/chmod
 EOF"
 sudo chmod 440 /etc/sudoers.d/githook-protect
 
-echo "[assignment-pull-request] Git hooks installed. Dev user: $OWNER_USER."
-echo "Hooks will handle:"
-echo "  - Sparse checkout configuration (post-checkout branch changes)" 
+echo "[protected-paths] Git hooks installed. Dev user: $OWNER_USER."
+echo "Features:"
+echo "  - Assignment-based sparse checkout (post-checkout branch changes)"
 echo "  - Protected path synchronization (all working tree modifications)"
+echo "  - Automatic configuration from workflow YAML files"
+echo "  - Go-based implementation with bash backup script"

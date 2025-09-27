@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Configuration
+MODULE="github.com/majikmate/assignment-pull-request"
+BINARY_NAME="githook"
+BINARY_PATH="${GOBIN:-$(go env GOPATH)/bin}/${BINARY_NAME}"
+
+# Determine which git hook is calling us
+HOOK_TYPE="$(basename "$0")"
+
+# Check if Go is available
+if ! command -v go >/dev/null 2>&1; then
+    echo "Go not found, skipping protect-sync update check" >&2
+    exit 0
+fi
+
+# Install/update binary to latest version
+echo "Installing/updating protect-sync to latest version..." >&2
+if go install "${MODULE}/cmd/${BINARY_NAME}@latest" 2>/dev/null; then
+    echo "Successfully installed/updated ${BINARY_NAME}" >&2
+elif [[ -x "$BINARY_PATH" ]]; then
+    echo "Install failed, using existing ${BINARY_NAME} at ${BINARY_PATH}" >&2
+else
+    echo "No ${BINARY_NAME} binary available and remote install failed, skipping" >&2
+    exit 0
+fi
+
+# Now run the actual hook logic
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+# Exit if not in a git repo
+[[ -n "$REPO_ROOT" ]] || exit 0
+
+# Change to repository root
+cd "$REPO_ROOT"
+
+# Run githook with hook type and all original arguments
+"$BINARY_PATH" "$HOOK_TYPE" "$@" || {
+    echo "githook failed for $HOOK_TYPE" >&2
+    exit 0  # Don't fail the git operation
+}
