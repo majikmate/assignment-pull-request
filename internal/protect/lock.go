@@ -26,13 +26,13 @@ func acquireLock(repositoryRoot string) (*Lock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to find git directory: %w", err)
 	}
-	
+
 	lockFile := filepath.Join(gitDir, "protect-paths.lock")
-	
+
 	// Try to acquire lock with timeout
 	timeout := 30 * time.Second
 	deadline := time.Now().Add(timeout)
-	
+
 	for time.Now().Before(deadline) {
 		file, err := os.OpenFile(lockFile, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
 		if err == nil {
@@ -44,10 +44,10 @@ func acquireLock(repositoryRoot string) (*Lock, error) {
 				os.Remove(lockFile)
 				return nil, fmt.Errorf("failed to write PID to lock file: %w", writeErr)
 			}
-			
+
 			return &Lock{lockFile: lockFile, file: file}, nil
 		}
-		
+
 		// If file exists, check if the process is still alive
 		if os.IsExist(err) {
 			if pid, err := readLockPID(lockFile); err == nil {
@@ -58,11 +58,11 @@ func acquireLock(repositoryRoot string) (*Lock, error) {
 				}
 			}
 		}
-		
+
 		// Wait a bit and try again
 		time.Sleep(100 * time.Millisecond)
 	}
-	
+
 	return nil, fmt.Errorf("timeout waiting for protect-paths lock (another operation may be in progress)")
 }
 
@@ -80,7 +80,7 @@ func readLockPID(lockFile string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	
+
 	pid, err := strconv.Atoi(string(data[:len(data)-1])) // Remove newline
 	return pid, err
 }
@@ -92,7 +92,7 @@ func isProcessRunning(pid int) bool {
 	if err != nil {
 		return false
 	}
-	
+
 	err = process.Signal(syscall.Signal(0))
 	return err == nil
 }

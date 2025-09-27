@@ -34,14 +34,14 @@ type Step struct {
 
 // Processor handles workflow file parsing and pattern extraction
 type Processor struct {
-	assignmentPattern *regex.Processor
+	assignmentPattern       *regex.Processor
 	protectedFoldersPattern *regex.Processor
 }
 
 // New creates a new workflow processor
 func New() *Processor {
 	return &Processor{
-		assignmentPattern: regex.New(),
+		assignmentPattern:       regex.New(),
 		protectedFoldersPattern: regex.New(),
 	}
 }
@@ -163,7 +163,7 @@ func (p *Processor) parseFile(filePath string) error {
 						p.assignmentPattern.AddNewlineSeparated(assignmentStr)
 					}
 				}
-				
+
 				// Extract protected paths patterns
 				if protectedPatterns, ok := with[constants.WorkflowProtectedPathsRegexKey]; ok {
 					if protectedStr, ok := protectedPatterns.(string); ok {
@@ -183,7 +183,7 @@ func (p *Processor) parseFile(filePath string) error {
 							p.assignmentPattern.AddNewlineSeparated(assignmentStr)
 						}
 					}
-					
+
 					// Extract protected paths patterns
 					if protectedPatterns, ok := with[constants.WorkflowProtectedPathsRegexKey]; ok {
 						if protectedStr, ok := protectedPatterns.(string); ok {

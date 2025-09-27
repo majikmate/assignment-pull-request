@@ -20,7 +20,7 @@ type PathEntry struct {
 type Info struct {
 	// Raw path entries (primary data storage)
 	entries []PathEntry
-	
+
 	// Lazily computed and cached arrays (computed only when first accessed)
 	absolutePaths  []string
 	relativePaths  []string
@@ -130,7 +130,7 @@ func (p *Processor) Find() (*Info, error) {
 type FindOptions struct {
 	// IncludeFiles controls whether files are included in results (default: true)
 	IncludeFiles bool
-	// IncludeDirs controls whether directories are included in results (default: true) 
+	// IncludeDirs controls whether directories are included in results (default: true)
 	IncludeDirs bool
 	// LogPrefix is the prefix used for logging messages (default: "🔍")
 	LogPrefix string

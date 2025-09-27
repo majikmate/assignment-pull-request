@@ -27,16 +27,16 @@ type Processor struct {
 
 // New creates a new protect processor
 func New(repositoryRoot string) *Processor {
-        return &Processor{
-                repositoryRoot: repositoryRoot,
-                gitOps:         git.NewOperationsWithDir(false, repositoryRoot), // Use repository root as working directory
-        }
+	return &Processor{
+		repositoryRoot: repositoryRoot,
+		gitOps:         git.NewOperationsWithDir(false, repositoryRoot), // Use repository root as working directory
+	}
 }
 
 // ProtectPaths implements the protect-sync logic in Go:
 // 1. Acquire exclusive lock to prevent concurrent operations
 // 2. Find protected paths using regex patterns
-// 3. Check for unmerged entries under protected paths  
+// 3. Check for unmerged entries under protected paths
 // 4. Extract files from HEAD for protected paths
 // 5. Mirror to working tree with majikmate ownership and permissions
 // 6. Apply skip-worktree flags
@@ -126,13 +126,13 @@ func (p *Processor) checkUnmergedEntries(protectedPathsInfo *paths.Info) error {
 	}
 
 	fmt.Printf("  Checking for merge conflicts in protected paths...\n")
-	
+
 	quotedPaths := protectedPathsInfo.QuotedRelativePaths()
 	return p.gitOps.CheckUnmergedEntries(quotedPaths)
 }
 
 // buildSnapshotFromHEAD creates a staging directory with files from HEAD
-// 
+//
 // This function uses Git's temporary index feature to safely extract files from HEAD
 // without disturbing the working directory or the main index. The approach:
 //
@@ -191,7 +191,7 @@ func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *pat
 	// Use rsync to atomically sync all protected paths from staging to working tree
 	// Permissions are already set in staging area, so rsync will preserve them atomically
 	// Source needs trailing slash to sync directory contents, destination should not have trailing slash
-	rsyncSource := filepath.Join(stageDir, "") + string(filepath.Separator)  // Ensure trailing slash
+	rsyncSource := filepath.Join(stageDir, "") + string(filepath.Separator) // Ensure trailing slash
 	rsyncDest := filepath.Clean(p.repositoryRoot)                           // Clean path, no trailing slash
 	rsyncCmd := exec.Command("rsync", "-av", "--delete",
 		"--no-owner", "--no-group", "--omit-dir-times",
@@ -211,10 +211,10 @@ func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *pat
 // setPermissions sets correct permissions on all files in the staging area
 func (p *Processor) setPermissions(stageDir string) error {
 	fmt.Printf("    Setting permissions in staging area...\n")
-	
+
 	// Use chmod -R with symbolic mode that preserves executable files:
 	// u=rwX,go=rX = user: read+write+execute_if_dir_or_executable
-	//               group+other: read+execute_if_dir_or_executable  
+	//               group+other: read+execute_if_dir_or_executable
 	// 'X' sets execute permission on:
 	//   - Directories (always, for traversal)
 	//   - Files that already have execute permission (preserves executables)
@@ -224,14 +224,14 @@ func (p *Processor) setPermissions(stageDir string) error {
 	//   - Executable files: 0755 (preserve executable status)
 	commands := []string{
 		fmt.Sprintf("cd '%s'", stageDir),
-		"chmod -R u=rwX,go=rX .",  // Smart permission setting that preserves executables
+		"chmod -R u=rwX,go=rX .", // Smart permission setting that preserves executables
 	}
-	
+
 	command := strings.Join(commands, " && ")
 	if _, err := p.runCommandAsUser(command); err != nil {
 		return fmt.Errorf("failed to set permissions in staging area: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -251,7 +251,7 @@ func (p *Processor) applySkipWorktreeFlags(protectedPathsInfo *paths.Info) error
 // Fails if SUDO_USER is empty or "root" to prevent privilege escalation
 func (p *Processor) runCommandAsUser(command string) (string, error) {
 	sudoUser := os.Getenv("SUDO_USER")
-	
+
 	// Fail if sudoUser is empty or root - we don't want to run as root
 	if sudoUser == "" {
 		return "", fmt.Errorf("SUDO_USER environment variable is not set - cannot determine original user")
@@ -262,6 +262,6 @@ func (p *Processor) runCommandAsUser(command string) (string, error) {
 
 	cmd := exec.Command("sudo", "-u", sudoUser, "bash", "-lc", command)
 	output, err := cmd.CombinedOutput()
-	
+
 	return string(output), err
 }

@@ -38,7 +38,7 @@ func main() {
 	if shouldProcessSparseCheckout(hookType) {
 		if len(assignmentPattern.Patterns()) > 0 {
 			log.Printf("Configuring sparse checkout with assignment patterns...")
-			
+
 			// Create sparse checkout processor
 			checkoutProcessor := checkout.New(repositoryRoot)
 			err = checkoutProcessor.SparseCheckout(assignmentPattern)
@@ -54,7 +54,7 @@ func main() {
 	if shouldProcessProtectedPaths(hookType) {
 		if len(protectedPathsPattern.Patterns()) > 0 {
 			log.Printf("Protecting paths with protected paths patterns...")
-			
+
 			// Create protect processor
 			protectProcessor := protect.New(repositoryRoot)
 			err = protectProcessor.ProtectPaths(protectedPathsPattern)
@@ -93,12 +93,12 @@ func shouldProcessSparseCheckout(hookType string) bool {
 	if hookType != "post-checkout" {
 		return false
 	}
-	
+
 	// Check if this is a branch checkout (argument 3 should be "1")
 	if len(os.Args) >= 4 && os.Args[3] == "1" {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -107,18 +107,18 @@ func shouldProcessProtectedPaths(hookType string) bool {
 	// Process protected paths for all hooks that modify the working tree
 	workingTreeModifyingHooks := []string{
 		"post-checkout",
-		"post-merge", 
+		"post-merge",
 		"post-rewrite",
 		"post-applypatch",
 		"post-commit",
 		"post-reset",
 	}
-	
+
 	for _, hook := range workingTreeModifyingHooks {
 		if hookType == hook {
 			return true
 		}
 	}
-	
+
 	return false
 }

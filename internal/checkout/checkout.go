@@ -36,7 +36,7 @@ func NewWithGitOps(repositoryRoot string, gitOps *git.Operations) *Processor {
 }
 
 // SparseCheckout configures Git sparse-checkout for assignments matching the current branch
-// Takes assignment patterns as a parameter and sets up sparse-checkout to include all non-assignment 
+// Takes assignment patterns as a parameter and sets up sparse-checkout to include all non-assignment
 // root folders plus only the assignment folders that match the current branch
 func (p *Processor) SparseCheckout(assignmentPattern *regex.Processor) error {
 	fmt.Printf("🔍 Starting sparse-checkout configuration...\n")
