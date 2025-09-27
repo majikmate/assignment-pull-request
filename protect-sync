@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Enforce root-owned protected prefixes from HEAD into the working tree.
+# Linux-only. Uses temp index + checkout-index to stage files, then rsync to WT.
+set -euo pipefail
+
+REPO="${1:-}"
+[[ -n "$REPO" && -d "$REPO/.git" ]] || { echo "Usage: $0 /path/to/repo"; exit 2; }
+
+# ---- Policy knobs ----
+OWNER="root:root"
+DIR_MODE="0755"
+FILE_MODE="0644"
+
+# Must be root (called via sudo from hook)
+[[ "$(id -u)" -eq 0 ]] || { echo "Run as root (via sudo)"; exit 1; }
+
+# Determine invoking developer (the non-root user who ran git)
+DEV_USER="${SUDO_USER:-$(logname 2>/dev/null || echo root)}"
+id "$DEV_USER" >/dev/null 2>&1 || DEV_USER=root
+
+# --- Guard: bail if unmerged entries under protected prefixes ---
+if sudo -u "$DEV_USER" bash -lc "cd '$REPO'; git ls-files -u -- ${PROTECTED_PATHS[*]} | grep -q ."; then
+  echo "protect-sync: conflicts under protected prefixes — resolve first." >&2
+  exit 1
+fi
+
+# --- Build snapshot with a TEMPORARY INDEX (no tar / no extra worktree) ---
+STAGE="$(mktemp -d)"
+cleanup() { rm -rf "$STAGE"; }
+trap cleanup EXIT
+
+sudo -u "$DEV_USER" bash -lc "
+  set -e
+  cd '$REPO'
+  TMPIDX=\$(mktemp)
+  trap 'rm -f \"\$TMPIDX\"' EXIT
+
+  # Filter HEAD tree into temp index for the protected prefixes
+  GIT_INDEX_FILE=\"\$TMPIDX\" git read-tree HEAD -- ${PROTECTED_PATHS[*]} 2>/dev/null || true
+
+  # If temp index has entries, materialize into STAGE
+  if GIT_INDEX_FILE=\"\$TMPIDX\" git ls-files -z | grep -q .; then
+    GIT_INDEX_FILE=\"\$TMPIDX\" git checkout-index -a --prefix='$STAGE/' >/dev/null
+  fi
+"
+
+# --- Mirror snapshot -> working tree (root-owned), enforce perms ---
+for p in "${PROTECTED_PATHS[@]}"; do
+  src="$STAGE/$p"
+  dst="$REPO/$p"
+
+  if [[ ! -e "$src" ]]; then
+    # Path absent at HEAD -> remove destination if present
+    [[ ! -e "$dst" ]] || rm -rf --one-file-system "$dst"
+    continue
+  fi
+
+  mkdir -p "$dst"
+  rsync -a --delete \
+        --no-perms --no-owner --no-group --omit-dir-times \
+        --chown="$OWNER" \
+        "$src/" "$dst/"
+
+  find "$dst" -type d -print0 | xargs -0 chmod "$DIR_MODE"
+  find "$dst" -type f -print0 | xargs -0 chmod "$FILE_MODE"
+done
+
+# --- Re-apply skip-worktree flags for all tracked files under those prefixes ---
+sudo -u "$DEV_USER" bash -lc "
+  set -e
+  cd '$REPO'
+  for p in ${PROTECTED_PATHS[@]}; do
+    git ls-files -z -- \"\$p\" | xargs -0 -r git update-index --skip-worktree
+  done
+"
+
+echo "protect-sync: updated from HEAD and locked (${#PROTECTED_PATHS[@]} prefixes)."

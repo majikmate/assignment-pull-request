@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/majikmate/assignment-pull-request/internal/checkout"
+	"github.com/majikmate/assignment-pull-request/internal/protect"
 	"github.com/majikmate/assignment-pull-request/internal/workflow"
 )
 
@@ -58,7 +59,10 @@ func main() {
 	// Protect folders with protected folder patterns
 	if len(protectedFoldersPattern.Patterns()) > 0 {
 		log.Printf("Protecting folders with protected folder patterns...")
-		err = checkoutProcessor.ProtectFolders(protectedFoldersPattern)
+		
+		// Create protect processor
+		protectProcessor := protect.New(repositoryRoot)
+		err = protectProcessor.ProtectPaths(protectedFoldersPattern)
 		if err != nil {
 			log.Printf("Failed to protect folders: %v", err)
 		}

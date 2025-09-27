@@ -2,12 +2,12 @@ package assignment
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/majikmate/assignment-pull-request/internal/paths"
 	"github.com/majikmate/assignment-pull-request/internal/regex"
 )
 
@@ -109,75 +109,29 @@ func (ap *Processor) validateBranchNameUniqueness(assignments []Info) error {
 // findAssignments finds all assignment folders matching the processor's regex patterns
 func (ap *Processor) findAssignments() ([]string, error) {
 	fmt.Printf("📁 Searching for assignment folders...\n")
-	var assignments []string
 
-	// Determine the root directory to walk
-	rootDir := ap.repositoryRoot
-	if rootDir == "" {
-		rootDir = "."
-	}
-
-	// Get compiled patterns for debugging
-	assignmentPatterns, err := ap.assignmentPattern.Compiled()
+	// Create paths processor to find matching directories
+	pathsProcessor, err := paths.NewProcessor(ap.repositoryRoot, ap.assignmentPattern)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compile assignment patterns: %w", err)
+		return nil, fmt.Errorf("failed to create paths processor: %w", err)
 	}
 
-	checkedDirs := 0
-	matchedDirs := 0
-
-	// Walk the entire directory tree and check each directory against assignment patterns
-	err = filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip hidden directories and files (but not the current directory ".")
-		baseName := filepath.Base(path)
-		if strings.HasPrefix(baseName, ".") && path != "." && path != rootDir {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Only process directories
-		if !info.IsDir() {
-			return nil
-		}
-
-		// Skip the root directory itself
-		if path == rootDir {
-			return nil
-		}
-
-		checkedDirs++
-
-		// Convert absolute path to relative path from repository root
-		relativePath, err := filepath.Rel(rootDir, path)
-		if err != nil {
-			return nil
-		}
-
-		// Use the relative path for pattern matching
-		relativeNormalizedPath := filepath.ToSlash(relativePath)
-
-		for _, assignmentPattern := range assignmentPatterns {
-			if assignmentPattern.MatchString(relativeNormalizedPath) {
-				assignments = append(assignments, path)
-				matchedDirs++
-				break // Don't check other patterns for this path
-			}
-		}
-
-		return nil
+	// Find all matching directories (only directories, not files)
+	matchingPaths, err := pathsProcessor.FindPathsWithOptions(paths.FindOptions{
+		IncludeFiles:   false, // Only directories
+		IncludeDirs:    true,
+		LogPrefix:      "📁",
+		LogDescription: "assignment folders",
 	})
-
 	if err != nil {
-		return nil, fmt.Errorf("error finding assignments: %w", err)
+		return nil, fmt.Errorf("failed to find assignment paths: %w", err)
 	}
 
-	// Sort assignments
+	// Convert path Info structs to string paths and sort
+	var assignments []string
+	for _, pathInfo := range matchingPaths {
+		assignments = append(assignments, pathInfo.Path)
+	}
 	sort.Strings(assignments)
 
 	return assignments, nil

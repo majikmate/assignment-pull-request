@@ -3,7 +3,6 @@ package checkout
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -207,98 +206,4 @@ func (p *Processor) scanRepositoryRootFolders() ([]string, error) {
 // isFilteredFolder returns true if the folder should be filtered out from sparse-checkout
 func isFilteredFolder(folderName string) bool {
 	return slices.Contains(constants.FilteredFolders, folderName)
-}
-
-// ProtectFolders scans for folders matching protected folder regex patterns and sets their ownership to user:prot group:prot recursively
-func (p *Processor) ProtectFolders(protectedFoldersPattern *regex.Processor) error {
-	fmt.Printf("🔒 Starting folder protection...\n")
-
-	// Get compiled patterns
-	protectedPatterns, err := protectedFoldersPattern.Compiled()
-	if err != nil {
-		return fmt.Errorf("failed to compile protected folder patterns: %w", err)
-	}
-
-	if len(protectedPatterns) == 0 {
-		fmt.Println("No protected folder patterns found, skipping folder protection")
-		return nil
-	}
-
-	fmt.Printf("Using %d protected folder pattern(s):\n", len(protectedPatterns))
-	for i, pattern := range protectedFoldersPattern.Patterns() {
-		fmt.Printf("  Pattern %d: %s\n", i+1, pattern)
-	}
-
-	var protectedFolders []string
-
-	// Walk the repository root to find matching folders
-	err = filepath.Walk(p.repositoryRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Only process directories
-		if !info.IsDir() {
-			return nil
-		}
-
-		// Skip the root directory itself
-		if path == p.repositoryRoot {
-			return nil
-		}
-
-		// Convert absolute path to relative path from repository root
-		relativePath, err := filepath.Rel(p.repositoryRoot, path)
-		if err != nil {
-			fmt.Printf("Warning: could not make path relative: %s\n", path)
-			return nil
-		}
-
-		// Normalize path to use forward slashes for pattern matching
-		normalizedPath := filepath.ToSlash(relativePath)
-
-		// Check against protected folder patterns
-		for _, pattern := range protectedPatterns {
-			if pattern.MatchString(normalizedPath) {
-				protectedFolders = append(protectedFolders, path)
-				fmt.Printf("  Found protected folder: %s\n", normalizedPath)
-				break // Don't check other patterns for this path
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("error scanning for protected folders: %w", err)
-	}
-
-	if len(protectedFolders) == 0 {
-		fmt.Println("No folders match protected patterns")
-		return nil
-	}
-
-	fmt.Printf("Protecting %d folder(s)...\n", len(protectedFolders))
-
-	// Change ownership of each protected folder recursively
-	for _, folderPath := range protectedFolders {
-		fmt.Printf("  Setting ownership for: %s\n", folderPath)
-		
-		// Run chown command recursively
-		cmd := exec.Command("sudo", "chown", "-R", "prot:prot", folderPath)
-		output, err := cmd.CombinedOutput()
-		
-		if err != nil {
-			fmt.Printf("    Warning: failed to change ownership of %s: %v\n", folderPath, err)
-			if len(output) > 0 {
-				fmt.Printf("    Output: %s\n", strings.TrimSpace(string(output)))
-			}
-			continue // Continue with other folders even if one fails
-		}
-		
-		fmt.Printf("    ✅ Successfully protected: %s\n", folderPath)
-	}
-
-	fmt.Printf("✅ Folder protection completed for %d folder(s)\n", len(protectedFolders))
-	return nil
 }
