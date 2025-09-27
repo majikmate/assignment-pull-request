@@ -180,6 +180,12 @@ function install_hooks_and_binaries() {
     # Install the shared git hook (calls githook binary)
     sudo install -m 0755 src/protected-paths/hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
     
+    # Patch the hook for local source tree installation - disable auto-update
+    if [ "$is_local_source" = "true" ]; then
+        echo "   🔧 Patching protect-sync-hook for local source tree..."
+        sudo sed -i 's/^if go install/if false \&\& go install/' /etc/git/hooks/protect-sync-hook
+    fi
+    
     # Install the secure rsync wrapper
     sudo install -m 755 src/protected-paths/scripts/githook-rsync /etc/git/hooks/githook-rsync
     
