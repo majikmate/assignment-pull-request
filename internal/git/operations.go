@@ -95,39 +95,7 @@ func NewOperationsWithDir(dryRun bool, workDir string) *Operations {
 	}
 }
 
-// Helper function to run git rev-parse commands
-func (o *Operations) revParse(args string, description string) (string, error) {
-	if o.workDir != "" {
-		// Use exec.Command directly when we need to set working directory
-		cmd := exec.Command("git", "rev-parse")
-		cmd.Args = append(cmd.Args, strings.Fields(args)...)
-		cmd.Dir = o.workDir
-		
-		if o.commander.dryRun {
-			if description != "" {
-				fmt.Printf("[DRY RUN] %s: git rev-parse %s (in %s)\n", description, args, o.workDir)
-			}
-			return "", nil
-		}
-		
-		if description != "" {
-			fmt.Printf("%s: git rev-parse %s (in %s)\n", description, args, o.workDir)
-		}
-		
-		output, err := cmd.Output()
-		if err != nil {
-			return "", fmt.Errorf("error running git rev-parse %s: %w", args, err)
-		}
-		
-		return strings.TrimSpace(string(output)), nil
-	}
-	
-	// Use commander for current directory operations
-	return o.commander.RunCommandWithOutput(
-		fmt.Sprintf("git rev-parse %s", args),
-		description,
-	)
-}
+
 
 // Helper function to parse branch listing output
 func (o *Operations) parseBranchList(output string, isRemote bool, excludeBranch string) map[string]bool {
@@ -326,17 +294,23 @@ func (o *Operations) GetRemoteBranches(defaultBranch string) (map[string]bool, e
 
 // GetCurrentBranch returns the name of the currently checked out branch
 func (o *Operations) GetCurrentBranch() (string, error) {
-	return o.revParse("--abbrev-ref HEAD", "Get current branch")
+	return o.runCommandInContext("git rev-parse --abbrev-ref HEAD", "Get current branch")
 }
 
 // InitSparseCheckout initializes sparse-checkout using modern init command
 func (o *Operations) InitSparseCheckout() error {
-	return o.sparseCheckoutCommand("init", "Initialize sparse-checkout")
+	return o.commander.RunCommand(
+		"git sparse-checkout init",
+		"Initialize sparse-checkout",
+	)
 }
 
 // InitSparseCheckoutCone enables Git sparse-checkout with cone mode using modern init command
 func (o *Operations) InitSparseCheckoutCone() error {
-	return o.sparseCheckoutCommand("init --cone", "Initialize sparse-checkout with cone mode")
+	return o.commander.RunCommand(
+		"git sparse-checkout init --cone",
+		"Initialize sparse-checkout with cone mode",
+	)
 }
 
 // SetSparseCheckoutPaths sets the sparse-checkout paths using git sparse-checkout command
@@ -347,24 +321,21 @@ func (o *Operations) SetSparseCheckoutPaths(paths []string) error {
 
 	// Use git sparse-checkout set command with paths
 	pathsStr := strings.Join(paths, " ")
-	return o.sparseCheckoutCommand(
-		fmt.Sprintf("set %s", pathsStr),
+	return o.commander.RunCommand(
+		fmt.Sprintf("git sparse-checkout set %s", pathsStr),
 		"Set sparse-checkout paths",
 	)
 }
 
 // DisableSparseCheckout disables sparse-checkout using modern git command
 func (o *Operations) DisableSparseCheckout() error {
-	return o.sparseCheckoutCommand("disable", "Disable sparse-checkout")
-}
-
-// Helper function for sparse-checkout commands
-func (o *Operations) sparseCheckoutCommand(args string, description string) error {
 	return o.commander.RunCommand(
-		fmt.Sprintf("git sparse-checkout %s", args),
-		description,
+		"git sparse-checkout disable",
+		"Disable sparse-checkout",
 	)
 }
+
+
 
 // ApplyCheckout applies sparse-checkout changes by reading the tree
 func (o *Operations) ApplyCheckout() error {
@@ -376,7 +347,7 @@ func (o *Operations) ApplyCheckout() error {
 
 // IsRepository checks if the current directory is a Git repository
 func (o *Operations) IsRepository() (bool, error) {
-	_, err := o.revParse("--git-dir", "")
+	_, err := o.runCommandInContext("git rev-parse --git-dir", "")
 	if err != nil {
 		// If the command fails, it's likely not a git repository
 		return false, nil
@@ -386,26 +357,26 @@ func (o *Operations) IsRepository() (bool, error) {
 
 // GetCommitHash returns the current commit hash
 func (o *Operations) GetCommitHash() (string, error) {
-	return o.revParse("HEAD", "Get commit hash")
+	return o.runCommandInContext("git rev-parse HEAD", "Get commit hash")
 }
 
 // GetShortCommitHash returns the short current commit hash
 func (o *Operations) GetShortCommitHash() (string, error) {
-	return o.revParse("--short HEAD", "Get short commit hash")
+	return o.runCommandInContext("git rev-parse --short HEAD", "Get short commit hash")
 }
 
 // GetRepositoryRoot uses Git to find the top-level repository directory
 // This is more reliable than os.Getwd() because Git hooks can be called
 // from any subdirectory within the repository
 func (o *Operations) GetRepositoryRoot() (string, error) {
-	return o.revParse("--show-toplevel", "Get repository root directory")
+	return o.runCommandInContext("git rev-parse --show-toplevel", "Get repository root directory")
 }
 
 // GetGitDir locates the actual git directory for the repository
 // This handles git worktrees, submodules, and other Git configurations
 // where .git might not be a directory in the repository root
 func (o *Operations) GetGitDir() (string, error) {
-	return o.revParse("--git-dir", "Get git directory")
+	return o.runCommandInContext("git rev-parse --git-dir", "Get git directory")
 }
 
 // FindGitDir finds the actual git directory, handling worktrees, submodules, etc.
