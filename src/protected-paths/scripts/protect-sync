@@ -35,7 +35,7 @@ PROTECTED_PATHS=("${TMP_LIST[@]}")
 [[ ${#PROTECTED_PATHS[@]} -gt 0 ]] || { echo "protect-sync: no protected paths defined; skipping."; exit 0; }
 
 # ---- Policy knobs ----
-OWNER="prot:prot"
+OWNER="majikmate:majikmate"
 DIR_MODE="0755"
 FILE_MODE="0644"
 
