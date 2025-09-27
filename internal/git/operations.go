@@ -173,21 +173,21 @@ func (o *Operations) FetchAll() error {
 
 // PushAllBranches pushes all local branches to remote
 func (o *Operations) PushAllBranches() error {
-	return o.Push("--all", "Atomically push all local branches to remote")
+	return o.commander.RunCommand(
+		fmt.Sprintf("git push %s --all", DefaultRemote),
+		"Atomically push all local branches to remote",
+	)
 }
 
 // PushBranch pushes a specific branch to remote
 func (o *Operations) PushBranch(branchName string) error {
-	return o.Push(branchName, fmt.Sprintf("Push branch '%s' to remote", branchName))
-}
-
-// Push provides a consolidated push operation
-func (o *Operations) Push(target string, description string) error {
 	return o.commander.RunCommand(
-		fmt.Sprintf("git push %s %s", DefaultRemote, target),
-		description,
+		fmt.Sprintf("git push %s %s", DefaultRemote, branchName),
+		fmt.Sprintf("Push branch '%s' to remote", branchName),
 	)
 }
+
+
 
 // MergeBranchToMain merges a specific branch into main
 func (o *Operations) MergeBranchToMain(branchName string) error {
