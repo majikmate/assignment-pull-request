@@ -187,8 +187,6 @@ func (o *Operations) PushBranch(branchName string) error {
 	)
 }
 
-
-
 // MergeBranchToMain merges a specific branch into main
 func (o *Operations) MergeBranchToMain(branchName string) error {
 	return o.MergeBranchTo(branchName, DefaultBranch)
