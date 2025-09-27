@@ -24,6 +24,19 @@ VERSION_ARG="${1:-}"
 
 echo "🔧 Installing Assignment Pull Request git hooks..."
 
+# Function to install dependencies
+function install_dependencies() {
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -y
+        sudo apt-get install -y --no-install-recommends git rsync sudo ca-certificates
+    elif command -v apk >/dev/null 2>&1; then
+        sudo apk add --no-cache git rsync sudo ca-certificates shadow bash
+    else
+        echo "Unsupported distro: need apt-get or apk" >&2
+        exit 1
+    fi
+}
+
 # Function to check if current directory is a complete source tree
 function is_complete_source_tree() {
     # Check if we have the essential files for a complete source tree
@@ -31,20 +44,26 @@ function is_complete_source_tree() {
     [[ -f "cmd/githook/main.go" ]] && \
     [[ -d "internal" ]] && \
     [[ -f "src/protected-paths/hooks/protect-sync-hook" ]] && \
+    [[ -f "src/protected-paths/scripts/common-install.sh" ]] && \
     grep -q "module.*assignment-pull-request" go.mod 2>/dev/null
 }
 
-# Source common installation functions conditionally
-if is_complete_source_tree; then
-    # For local installs, source from current directory
-    source "$(dirname "$0")/src/protected-paths/scripts/common-install.sh"
-    # Install dependencies
-    install_dependencies
-fi
+# Function to perform common setup tasks
+function perform_common_setup() {
+    create_majikmate_user "$OWNER_USER"
+    setup_git_hooks_path
+    create_hook_symlinks
+    configure_sudo_permissions "$OWNER_USER"
+    print_installation_summary "$OWNER_USER" "standalone"
+}
 
 # Function to install from local source tree
 function install_from_source_tree() {
     echo "   📁 Installing from local source tree..."
+    
+    # Source common functions and install dependencies
+    source "$(dirname "$0")/src/protected-paths/scripts/common-install.sh"
+    install_dependencies
     
     # Check if Go is available
     if ! command -v go >/dev/null 2>&1; then
@@ -63,6 +82,9 @@ function install_from_source_tree() {
     # Patch the hook for development mode - minimal invasive patch
     echo "   🔧 Patching protect-sync-hook for development mode..."
     sudo sed -i 's/^if go install/if false \&\& go install/' /etc/git/hooks/protect-sync-hook
+    
+    # Perform common setup
+    perform_common_setup
     
     echo "   ✅ Installed from local source tree (development mode - auto-update disabled)"
 }
@@ -162,16 +184,8 @@ function resolve_version_to_clone() {
 function install_from_remote() {
     echo "   🌐 Installing from remote repository..."
     
-    # Install dependencies first (before Go check since we need git for cloning)
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update -y
-        sudo apt-get install -y --no-install-recommends git rsync sudo ca-certificates
-    elif command -v apk >/dev/null 2>&1; then
-        sudo apk add --no-cache git rsync sudo ca-certificates shadow bash
-    else
-        echo "Unsupported distro: need apt-get or apk" >&2
-        exit 1
-    fi
+    # Install dependencies first
+    install_dependencies
     
     # Check if Go is available
     if ! command -v go >/dev/null 2>&1; then
@@ -201,7 +215,7 @@ function install_from_remote() {
         fi
     fi
     
-    # Now source the common functions from the downloaded repo
+    # Source the common functions from the downloaded repo
     source src/protected-paths/scripts/common-install.sh
     
     # Install the githook binary from the cloned source
@@ -214,21 +228,11 @@ function install_from_remote() {
     # Return to original directory (trap will handle cleanup)
     cd - >/dev/null
     
-    # Now perform the common setup tasks using the functions we just sourced
-    create_majikmate_user "$OWNER_USER"
-    setup_git_hooks_path
-    create_hook_symlinks
-    configure_sudo_permissions "$OWNER_USER"
-    print_installation_summary "$OWNER_USER" "standalone"
+    # Perform common setup
+    perform_common_setup
     
     echo "   ✅ Installed from remote repository"
 }
-
-# --- Create majikmate user/group ---
-create_majikmate_user "$OWNER_USER"
-
-# --- Setup git hooks path ---
-setup_git_hooks_path
 
 # --- Install hooks and binaries ---
 echo "📥 Installing hooks and binaries..."
@@ -243,21 +247,6 @@ fi
 # Check if we're in a complete source tree and install accordingly
 if is_complete_source_tree; then
     install_from_source_tree
-    
-    # --- Create majikmate user/group ---
-    create_majikmate_user "$OWNER_USER"
-    
-    # --- Setup git hooks path ---
-    setup_git_hooks_path
-    
-    # Create symbolic links for all post-* hooks that modify the working tree
-    create_hook_symlinks
-    
-    # --- Grant minimal sudo (NOPASSWD) for protected path operations ---
-    configure_sudo_permissions "$OWNER_USER"
-    
-    # --- Print installation summary ---
-    print_installation_summary "$OWNER_USER" "standalone"
 else
     install_from_remote
 fi
