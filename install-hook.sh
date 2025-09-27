@@ -5,6 +5,14 @@
 # as the devcontainer feature, with the exception that it checks if the current folder 
 # is a complete source tree and installs from that source tree, otherwise installs 
 # from the remote module.
+#
+# Usage: ./install-hook.sh [version]
+#   version can be:
+#   - (empty)     : Install from @latest (latest release)
+#   - v1.2.3      : Install from specific semantic version tag
+#   - v1.2        : Install from specific major.minor tag
+#   - v1          : Install from specific major tag
+#   - branch-name : Install from specific branch name
 
 set -euo pipefail
 
@@ -13,6 +21,7 @@ MODULE="github.com/majikmate/assignment-pull-request"
 BINARY_NAME="githook"
 HOOK_NAME="protect-sync-hook"
 OWNER_USER="${USER:-vscode}"
+VERSION_ARG="${1:-}"
 
 echo "🔧 Installing Assignment Pull Request git hooks..."
 
@@ -60,13 +69,104 @@ function install_from_source_tree() {
     echo "   ✅ Installed from local source tree"
 }
 
+# Function to resolve version to clone
+function resolve_version_to_clone() {
+    local version="$1"
+    
+    # If no version specified, find the latest stable semantic version
+    if [ -z "$version" ]; then
+        echo "   📦 Finding latest stable version..."
+        
+        # First, check if there's a "latest" tag
+        local latest_tag_exists
+        latest_tag_exists=$(git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/latest" >/dev/null 2>&1 && echo "yes" || echo "no")
+        
+        if [ "$latest_tag_exists" = "yes" ]; then
+            echo "   ✅ Found 'latest' tag"
+            echo "latest"
+            return
+        fi
+        
+        # Get all semantic version tags from the repository
+        local all_tags
+        all_tags=$(git ls-remote --tags "https://github.com/$REPO.git" | awk '{print $2}' | sed 's|refs/tags/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || echo "")
+        
+        if [ -n "$all_tags" ]; then
+            # Get the latest semantic version (sort -V handles semantic versioning)
+            local latest_stable
+            latest_stable=$(echo "$all_tags" | tail -n 1)
+            echo "   ✅ Found latest stable version: $latest_stable"
+            echo "$latest_stable"
+        else
+            # Fallback: try GitHub releases API
+            echo "   📦 No semantic version tags found, checking GitHub releases..."
+            local github_latest
+            github_latest=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+            
+            if [ -n "$github_latest" ]; then
+                echo "   ✅ Found latest release: $github_latest"
+                echo "$github_latest"
+            else
+                echo "   ⚠️  No releases found, using main branch"
+                echo "main"
+            fi
+        fi
+        return
+    fi
+    
+    # If version starts with 'v' and follows semantic versioning, validate it exists
+    if [[ "$version" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+        echo "   🔍 Validating semantic version tag: $version"
+        
+        # Check if the exact tag exists
+        if git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/$version" >/dev/null 2>&1; then
+            echo "   ✅ Tag $version exists"
+            echo "$version"
+        else
+            # For partial versions like v1 or v1.2, find the latest matching version
+            echo "   🔍 Searching for latest version matching $version..."
+            local matching_tags
+            matching_tags=$(git ls-remote --tags "https://github.com/$REPO.git" | awk '{print $2}' | sed 's|refs/tags/||' | grep -E "^${version}(\.[0-9]+)*$" | sort -V || echo "")
+            
+            if [ -n "$matching_tags" ]; then
+                local latest_match
+                latest_match=$(echo "$matching_tags" | tail -n 1)
+                echo "   ✅ Found matching version: $latest_match"
+                echo "$latest_match"
+            else
+                echo "   ⚠️  No matching version found for $version, will try as branch"
+                echo "$version"
+            fi
+        fi
+        return
+    fi
+    
+    # Check for special "latest" tag
+    if [ "$version" = "latest" ]; then
+        echo "   🔍 Checking for 'latest' tag..."
+        if git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/latest" >/dev/null 2>&1; then
+            echo "   ✅ Found 'latest' tag"
+            echo "latest"
+        else
+            echo "   ⚠️  No 'latest' tag found, falling back to semantic versioning..."
+            # Recursively call with empty version to get latest stable
+            resolve_version_to_clone ""
+        fi
+        return
+    fi
+    
+    # Otherwise, treat as branch name
+    echo "   📋 Using as branch name: $version"
+    echo "$version"
+}
+
 # Function to install from remote module
 function install_from_remote() {
-    echo "   🌐 Installing from remote module..."
+    echo "   🌐 Installing from remote repository..."
     
     # Check if Go is available
     if ! command -v go >/dev/null 2>&1; then
-        echo "   ❌ Go is required to install from remote module"
+        echo "   ❌ Go is required to build from remote repository"
         echo "      Please install Go"
         exit 1
     fi
@@ -76,13 +176,25 @@ function install_from_remote() {
     trap 'rm -rf "$TEMP_DIR"' EXIT
     cd "$TEMP_DIR"
     
-    # Clone repository to get hook files
-    echo "   📦 Downloading hook files..."
-    git clone --depth 1 "https://github.com/$REPO.git" .
+    # Resolve version to clone
+    TARGET_VERSION=$(resolve_version_to_clone "$VERSION_ARG")
     
-    # Install the githook binary from remote
-    echo "   🔨 Installing githook binary from remote..."
-    go install "${MODULE}/cmd/${BINARY_NAME}@latest"
+    if [ "$TARGET_VERSION" = "main" ]; then
+        echo "   📦 No releases found, downloading from main branch..."
+        git clone --depth 1 "https://github.com/$REPO.git" .
+    else
+        echo "   📦 Downloading repository at $TARGET_VERSION..."
+        if git clone --depth 1 --branch "$TARGET_VERSION" "https://github.com/$REPO.git" . 2>/dev/null; then
+            echo "   ✅ Successfully cloned $TARGET_VERSION"
+        else
+            echo "   ⚠️  Failed to clone $TARGET_VERSION, falling back to main branch..."
+            git clone --depth 1 "https://github.com/$REPO.git" .
+        fi
+    fi
+    
+    # Install the githook binary from the cloned source
+    echo "   🔨 Installing githook binary from cloned source..."
+    go install ./cmd/${BINARY_NAME}
     
     # Install the shared git hook (calls githook binary)
     sudo install -m 0755 src/protected-paths/hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
@@ -90,7 +202,7 @@ function install_from_remote() {
     # Return to original directory (trap will handle cleanup)
     cd - >/dev/null
     
-    echo "   ✅ Installed from remote module"
+    echo "   ✅ Installed from remote repository"
 }
 
 # --- Create dedicated majikmate:majikmate user/group for protected path ownership ---
@@ -120,6 +232,13 @@ echo "   Set core.hooksPath to /etc/git/hooks"
 
 # --- Install hooks and binaries ---
 echo "📥 Installing hooks and binaries..."
+
+# Show what version will be installed if installing from remote
+if ! is_complete_source_tree && [ -n "$VERSION_ARG" ]; then
+    echo "   🎯 Target version: $VERSION_ARG"
+elif ! is_complete_source_tree; then
+    echo "   🎯 Target version: @latest"
+fi
 
 # Check if we're in a complete source tree and install accordingly
 if is_complete_source_tree; then
