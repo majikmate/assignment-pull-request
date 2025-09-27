@@ -271,11 +271,17 @@ func (p *Processor) quotePathsForShell(paths []string) []string {
 	return quoted
 }
 
-// runCommandAsUser executes a command as the original user (not root)
+// runCommandAsUser executes a command as the original user (never root)
+// Fails if SUDO_USER is empty or "root" to prevent privilege escalation
 func (p *Processor) runCommandAsUser(command string) (string, error) {
 	sudoUser := os.Getenv("SUDO_USER")
+	
+	// Fail if sudoUser is empty or root - we don't want to run as root
 	if sudoUser == "" {
-		sudoUser = "root"
+		return "", fmt.Errorf("SUDO_USER environment variable is not set - cannot determine original user")
+	}
+	if sudoUser == "root" {
+		return "", fmt.Errorf("SUDO_USER is 'root' - refusing to run commands as root user")
 	}
 
 	cmd := exec.Command("sudo", "-u", sudoUser, "bash", "-lc", command)
