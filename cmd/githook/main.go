@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -10,24 +11,14 @@ import (
 )
 
 func main() {
-	// Check if this is a post-checkout hook call
-	if len(os.Args) < 4 {
-		log.Fatal("Usage: post-checkout <old-ref> <new-ref> <branch-checkout-flag>")
-	}
-
-	branchCheckout := os.Args[3]
-
-	// Only process branch checkouts
-	if branchCheckout != "1" {
-		return
-	}
-
-	// Get repository root (current working directory)
-	repositoryRoot, err := os.Getwd()
+	// Determine the git hook type and repository root
+	hookType, repositoryRoot, err := determineHookContext()
 	if err != nil {
-		log.Printf("Failed to get current working directory: %v", err)
+		log.Printf("Failed to determine hook context: %v", err)
 		return
 	}
+
+	log.Printf("Processing %s hook in repository: %s", hookType, repositoryRoot)
 
 	// Parse workflow files to find assignment and protected folder configurations
 	log.Printf("Parsing workflow files for patterns...")
@@ -42,31 +33,89 @@ func main() {
 	assignmentPattern := workflowProcessor.AssignmentPattern()
 	protectedFoldersPattern := workflowProcessor.ProtectedFoldersPattern()
 
-	// Configure sparse-checkout with assignment patterns
-	if len(assignmentPattern.Patterns()) > 0 {
-		log.Printf("Configuring sparse checkout with assignment patterns...")
-		
-		// Create sparse checkout processor
-		checkoutProcessor := checkout.New(repositoryRoot)
-		err = checkoutProcessor.SparseCheckout(assignmentPattern)
-		if err != nil {
-			log.Printf("Failed to configure sparse checkout: %v", err)
+	// Handle sparse checkout only for post-checkout with branch checkout
+	if shouldProcessSparseCheckout(hookType) {
+		if len(assignmentPattern.Patterns()) > 0 {
+			log.Printf("Configuring sparse checkout with assignment patterns...")
+			
+			// Create sparse checkout processor
+			checkoutProcessor := checkout.New(repositoryRoot)
+			err = checkoutProcessor.SparseCheckout(assignmentPattern)
+			if err != nil {
+				log.Printf("Failed to configure sparse checkout: %v", err)
+			}
+		} else {
+			log.Printf("No assignment patterns found, skipping sparse-checkout configuration")
 		}
-	} else {
-		log.Printf("No assignment patterns found, skipping sparse-checkout configuration")
 	}
 
-	// Protect folders with protected folder patterns
-	if len(protectedFoldersPattern.Patterns()) > 0 {
-		log.Printf("Protecting folders with protected folder patterns...")
-		
-		// Create protect processor
-		protectProcessor := protect.New(repositoryRoot)
-		err = protectProcessor.ProtectPaths(protectedFoldersPattern)
-		if err != nil {
-			log.Printf("Failed to protect folders: %v", err)
+	// Handle path protection for all hooks that modify working tree
+	if shouldProcessProtectedPaths(hookType) {
+		if len(protectedFoldersPattern.Patterns()) > 0 {
+			log.Printf("Protecting paths with protected folder patterns...")
+			
+			// Create protect processor
+			protectProcessor := protect.New(repositoryRoot)
+			err = protectProcessor.ProtectPaths(protectedFoldersPattern)
+			if err != nil {
+				log.Printf("Failed to protect paths: %v", err)
+			}
+		} else {
+			log.Printf("No protected folder patterns found, skipping path protection")
 		}
-	} else {
-		log.Printf("No protected folder patterns found, skipping folder protection")
 	}
+}
+
+// determineHookContext determines the git hook type and repository root
+func determineHookContext() (string, string, error) {
+	// Get repository root
+	repositoryRoot, err := os.Getwd()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	// Determine hook type from program arguments or environment
+	if len(os.Args) >= 2 {
+		hookType := os.Args[1]
+		return hookType, repositoryRoot, nil
+	}
+
+	// Fallback: try to determine from program name or environment
+	return "unknown", repositoryRoot, nil
+}
+
+// shouldProcessSparseCheckout determines if sparse checkout should be processed for this hook
+func shouldProcessSparseCheckout(hookType string) bool {
+	// Only process sparse checkout for post-checkout with branch checkout
+	if hookType != "post-checkout" {
+		return false
+	}
+	
+	// Check if this is a branch checkout (argument 3 should be "1")
+	if len(os.Args) >= 4 && os.Args[3] == "1" {
+		return true
+	}
+	
+	return false
+}
+
+// shouldProcessProtectedPaths determines if path protection should be processed for this hook
+func shouldProcessProtectedPaths(hookType string) bool {
+	// Process protected paths for all hooks that modify the working tree
+	workingTreeModifyingHooks := []string{
+		"post-checkout",
+		"post-merge", 
+		"post-rewrite",
+		"post-applypatch",
+		"post-commit",
+		"post-reset",
+	}
+	
+	for _, hook := range workingTreeModifyingHooks {
+		if hookType == hook {
+			return true
+		}
+	}
+	
+	return false
 }

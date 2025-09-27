@@ -12,17 +12,18 @@ import (
 
 // Info represents a path that matched a pattern
 type Info struct {
-	Path string
+	Path         string // Absolute path
+	RelativePath string // Relative path from root
 }
 
 // Processor handles generic path discovery and processing
 type Processor struct {
-	repositoryRoot string
-	patterns       *regex.Processor
+	root     string
+	patterns *regex.Processor
 }
 
-// NewProcessor creates a new Processor with regex patterns
-func NewProcessor(repositoryRoot string, patterns *regex.Processor) (*Processor, error) {
+// NewProcessor creates a new Processor with regex patterns for scanning from the specified root directory
+func NewProcessor(root string, patterns *regex.Processor) (*Processor, error) {
 	// Validate that we have at least one pattern
 	patternStrings := patterns.Patterns()
 	if len(patternStrings) == 0 {
@@ -36,8 +37,8 @@ func NewProcessor(repositoryRoot string, patterns *regex.Processor) (*Processor,
 	}
 
 	return &Processor{
-		repositoryRoot: repositoryRoot,
-		patterns:       patterns,
+		root:     root,
+		patterns: patterns,
 	}, nil
 }
 
@@ -73,10 +74,13 @@ func (p *Processor) FindPathsWithOptions(opts FindOptions) ([]Info, error) {
 	}
 
 	fmt.Printf("%s Searching for %s...\n", opts.LogPrefix, opts.LogDescription)
-	var matchedPaths []string
+	var matchedPaths []struct {
+		absolutePath string
+		relativePath string
+	}
 
 	// Determine the root directory to walk
-	rootDir := p.repositoryRoot
+	rootDir := p.root
 	if rootDir == "" {
 		rootDir = "."
 	}
@@ -120,7 +124,7 @@ func (p *Processor) FindPathsWithOptions(opts FindOptions) ([]Info, error) {
 
 		checkedPaths++
 
-		// Convert absolute path to relative path from repository root
+		// Convert absolute path to relative path from root
 		relativePath, err := filepath.Rel(rootDir, path)
 		if err != nil {
 			return nil
@@ -132,7 +136,13 @@ func (p *Processor) FindPathsWithOptions(opts FindOptions) ([]Info, error) {
 		// Check if this path matches any of the patterns
 		for _, pattern := range compiledPatterns {
 			if pattern.MatchString(relativeNormalizedPath) {
-				matchedPaths = append(matchedPaths, path)
+				matchedPaths = append(matchedPaths, struct {
+					absolutePath string
+					relativePath string
+				}{
+					absolutePath: path,
+					relativePath: relativePath,
+				})
 				matchedCount++
 				break // Don't check other patterns for this path
 			}
@@ -145,15 +155,20 @@ func (p *Processor) FindPathsWithOptions(opts FindOptions) ([]Info, error) {
 		return nil, fmt.Errorf("error finding %s: %w", opts.LogDescription, err)
 	}
 
-	// Sort paths for consistent output
-	sort.Strings(matchedPaths)
+	// Sort paths by absolute path for consistent output
+	sort.Slice(matchedPaths, func(i, j int) bool {
+		return matchedPaths[i].absolutePath < matchedPaths[j].absolutePath
+	})
 
 	fmt.Printf("%s Found %d %s (checked %d paths total)\n", opts.LogPrefix, matchedCount, opts.LogDescription, checkedPaths)
 
 	// Convert paths to Info structs
 	var results []Info
-	for _, path := range matchedPaths {
-		results = append(results, Info{Path: path})
+	for _, pathPair := range matchedPaths {
+		results = append(results, Info{
+			Path:         pathPair.absolutePath,
+			RelativePath: pathPair.relativePath,
+		})
 	}
 
 	return results, nil
@@ -175,7 +190,7 @@ func (p *Processor) IsPathMatched(checkPath string) (bool, error) {
 	// Convert to relative path if it's absolute
 	var relativePath string
 	if filepath.IsAbs(checkPath) {
-		relativePath, err = filepath.Rel(p.repositoryRoot, checkPath)
+		relativePath, err = filepath.Rel(p.root, checkPath)
 		if err != nil {
 			return false, fmt.Errorf("failed to make path relative: %w", err)
 		}
