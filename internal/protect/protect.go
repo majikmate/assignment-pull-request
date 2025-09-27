@@ -18,7 +18,7 @@ const (
 	majikOwner   = "majikmate:majikmate"
 	dirMode      = "0755"
 	fileMode     = "0644"
-	stagePrefix  = "protect-sync-stage-"
+	stagePrefix  = "majikmate-protect-sync-stage-"
 )
 
 // Processor handles path protection operations
@@ -54,49 +54,49 @@ func (p *Processor) ProtectPaths(protectedFoldersPattern *regex.Processor) error
 	}
 
 	// Find protected paths using patterns
-	protectedPaths, err := p.findProtectedPaths(protectedFoldersPattern)
+	protectedPathsResult, err := p.findProtectedPaths(protectedFoldersPattern)
 	if err != nil {
 		return err
 	}
 
-	if len(protectedPaths) == 0 {
+	if protectedPathsResult.Empty() {
 		fmt.Println("No paths match protected patterns")
 		return nil
 	}
 
-	fmt.Printf("Processing %d protected path(s)...\n", len(protectedPaths))
+	fmt.Printf("Processing %d protected path(s)...\n", protectedPathsResult.Count())
 
 	// Execute the protect-sync workflow
-	if err := p.checkUnmergedEntries(protectedPaths); err != nil {
+	if err := p.checkUnmergedEntries(protectedPathsResult); err != nil {
 		return err
 	}
 
-	stageDir, err := p.buildSnapshotFromHEAD(protectedPaths)
+	stageDir, err := p.buildSnapshotFromHEAD(protectedPathsResult)
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(stageDir)
 
-	if err := p.mirrorToWorkingTree(stageDir, protectedPaths); err != nil {
+	if err := p.mirrorToWorkingTree(stageDir, protectedPathsResult); err != nil {
 		return err
 	}
 
-	if err := p.applySkipWorktreeFlags(protectedPaths); err != nil {
+	if err := p.applySkipWorktreeFlags(protectedPathsResult); err != nil {
 		return err
 	}
 
-	fmt.Printf("✅ Path protection completed for %d path(s)\n", len(protectedPaths))
+	fmt.Printf("✅ Path protection completed for %d path(s)\n", protectedPathsResult.Count())
 	return nil
 }
 
-// findProtectedPaths discovers paths matching the protection patterns
-func (p *Processor) findProtectedPaths(protectedFoldersPattern *regex.Processor) ([]string, error) {
+// findProtectedPaths discovers paths matching the protection patterns and returns a Result for flexible usage
+func (p *Processor) findProtectedPaths(protectedFoldersPattern *regex.Processor) (*paths.Result, error) {
 	pathsProcessor, err := paths.NewProcessor(p.repositoryRoot, protectedFoldersPattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create paths processor: %w", err)
 	}
 
-	matchingPaths, err := pathsProcessor.FindPathsWithOptions(paths.FindOptions{
+	result, err := pathsProcessor.FindWithOptions(paths.FindOptions{
 		IncludeFiles:   true,
 		IncludeDirs:    true,
 		LogPrefix:      "🔒",
@@ -106,26 +106,24 @@ func (p *Processor) findProtectedPaths(protectedFoldersPattern *regex.Processor)
 		return nil, fmt.Errorf("failed to find protected paths: %w", err)
 	}
 
-	// Extract relative paths for git operations
-	var protectedPaths []string
-	for _, pathInfo := range matchingPaths {
-		protectedPaths = append(protectedPaths, pathInfo.RelativePath)
-	}
-
-	return protectedPaths, nil
+	return result, nil
 }
 
 // checkUnmergedEntries verifies no merge conflicts exist in protected paths
-func (p *Processor) checkUnmergedEntries(protectedPaths []string) error {
-	if len(protectedPaths) == 0 {
+func (p *Processor) checkUnmergedEntries(protectedPathsResult *paths.Result) error {
+	if protectedPathsResult.Empty() {
 		return nil
 	}
 
 	fmt.Printf("  Checking for merge conflicts in protected paths...\n")
 	
-	pathArgs := p.quotePathsForShell(protectedPaths)
-	command := fmt.Sprintf("cd '%s' && git ls-files -u -- %s", p.repositoryRoot, strings.Join(pathArgs, " "))
+	quotedPaths := protectedPathsResult.QuotedRelativePaths()
+	commands := []string{
+		fmt.Sprintf("cd '%s'", p.repositoryRoot),
+		fmt.Sprintf("git ls-files -u -- %s", strings.Join(quotedPaths, " ")),
+	}
 	
+	command := strings.Join(commands, " && ")
 	output, err := p.runCommandAsUser(command)
 	if err != nil {
 		return fmt.Errorf("failed to check for unmerged entries: %w", err)
@@ -139,32 +137,64 @@ func (p *Processor) checkUnmergedEntries(protectedPaths []string) error {
 }
 
 // buildSnapshotFromHEAD creates a staging directory with files from HEAD
-func (p *Processor) buildSnapshotFromHEAD(protectedPaths []string) (string, error) {
+// 
+// This function uses Git's temporary index feature to safely extract files from HEAD
+// without disturbing the working directory or the main index. The approach:
+//
+// 1. Create isolated temporary index file (not Git's main .git/index)
+// 2. Populate it with specific paths from HEAD using git read-tree
+// 3. Extract files to staging directory using git checkout-index
+// 4. Automatic cleanup ensures no temporary index files leak
+//
+// Why this approach vs. alternatives:
+// - git checkout HEAD -- paths: Would modify working directory directly (unsafe)
+// - git archive: Cannot handle sparse path patterns reliably
+// - git show HEAD:path: Requires individual file handling, complex for directories
+// - Temporary index: Atomic, isolated, handles directories/files uniformly
+func (p *Processor) buildSnapshotFromHEAD(protectedPathsResult *paths.Result) (string, error) {
 	fmt.Printf("  Building snapshot from HEAD...\n")
 
+	// Create staging directory where we'll extract the clean HEAD version
 	stageDir, err := os.MkdirTemp("", stagePrefix)
 	if err != nil {
 		return "", fmt.Errorf("failed to create staging directory: %w", err)
 	}
 
-	if len(protectedPaths) == 0 {
+	// Set up cleanup for staging directory in case of early return
+	defer func() {
+		if err != nil {
+			os.RemoveAll(stageDir)
+		}
+	}()
+
+	if protectedPathsResult.Empty() {
 		return stageDir, nil
 	}
 
-	pathArgs := p.quotePathsForShell(protectedPaths)
+	quotedPaths := protectedPathsResult.QuotedRelativePaths()
 	commands := []string{
 		fmt.Sprintf("cd '%s'", p.repositoryRoot),
+		// Create temporary index file (separate from .git/index)
 		"TMPIDX=$(mktemp)",
+		// Ensure temp index cleanup on shell exit (belts and suspenders)
 		"trap 'rm -f \"$TMPIDX\"' EXIT",
-		fmt.Sprintf("GIT_INDEX_FILE=\"$TMPIDX\" git read-tree HEAD -- %s 2>/dev/null || true", strings.Join(pathArgs, " ")),
+		// Populate temp index with specified paths from HEAD commit
+		// GIT_INDEX_FILE redirects Git to use our temporary index instead of .git/index
+		// read-tree populates the index with tree objects (directories/files) from HEAD
+		// The '|| true' handles cases where paths don't exist in HEAD (no error)
+		fmt.Sprintf("GIT_INDEX_FILE=\"$TMPIDX\" git read-tree HEAD -- %s 2>/dev/null || true", strings.Join(quotedPaths, " ")),
+		// Check if our temp index actually contains any files (read-tree succeeded)
 		"if GIT_INDEX_FILE=\"$TMPIDX\" git ls-files -z | grep -q .; then",
+		// Extract all files from temp index to staging directory
+		// checkout-index -a = all files in index, --prefix adds directory prefix
+		// This creates the actual file content in stageDir/ matching the index structure
 		fmt.Sprintf("  GIT_INDEX_FILE=\"$TMPIDX\" git checkout-index -a --prefix='%s/' >/dev/null", stageDir),
 		"fi",
+		// temp index file is automatically cleaned up by trap on command completion
 	}
 
 	command := strings.Join(commands, " && ")
-	if _, err := p.runCommandAsUser(command); err != nil {
-		os.RemoveAll(stageDir)
+	if _, err = p.runCommandAsUser(command); err != nil {
 		return "", fmt.Errorf("failed to build snapshot from HEAD: %w", err)
 	}
 
@@ -172,10 +202,10 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPaths []string) (string, erro
 }
 
 // mirrorToWorkingTree syncs the snapshot to working tree with majikmate ownership
-func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPaths []string) error {
+func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsResult *paths.Result) error {
 	fmt.Printf("  Mirroring to working tree with majikmate ownership...\n")
 
-	for _, protectedPath := range protectedPaths {
+	for _, protectedPath := range protectedPathsResult.RelativePaths() {
 		if err := p.syncPath(stageDir, protectedPath); err != nil {
 			fmt.Printf("    Warning: failed to sync %s: %v\n", protectedPath, err)
 		}
@@ -241,15 +271,15 @@ func (p *Processor) setPermissions(rootPath string) error {
 }
 
 // applySkipWorktreeFlags sets skip-worktree flags on all tracked files in protected paths
-func (p *Processor) applySkipWorktreeFlags(protectedPaths []string) error {
-	if len(protectedPaths) == 0 {
+func (p *Processor) applySkipWorktreeFlags(protectedPathsResult *paths.Result) error {
+	if protectedPathsResult.Empty() {
 		return nil
 	}
 
 	fmt.Printf("  Applying skip-worktree flags...\n")
 
 	commands := []string{fmt.Sprintf("cd '%s'", p.repositoryRoot)}
-	for _, path := range protectedPaths {
+	for _, path := range protectedPathsResult.RelativePaths() {
 		commands = append(commands,
 			fmt.Sprintf("git ls-files -z -- '%s' | xargs -0 -r git update-index --skip-worktree", path))
 	}
@@ -260,15 +290,6 @@ func (p *Processor) applySkipWorktreeFlags(protectedPaths []string) error {
 	}
 
 	return nil
-}
-
-// quotePathsForShell safely quotes paths for shell commands
-func (p *Processor) quotePathsForShell(paths []string) []string {
-	var quoted []string
-	for _, path := range paths {
-		quoted = append(quoted, fmt.Sprintf("'%s'", path))
-	}
-	return quoted
 }
 
 // runCommandAsUser executes a command as the original user (never root)

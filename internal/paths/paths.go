@@ -16,6 +16,62 @@ type Info struct {
 	RelativePath string // Relative path from root
 }
 
+// Result represents the result of a path search operation
+type Result struct {
+	paths []Info
+}
+
+// Paths returns all path info objects
+func (r *Result) Paths() []Info {
+	return r.paths
+}
+
+// AbsolutePaths returns only the absolute paths
+func (r *Result) AbsolutePaths() []string {
+	var paths []string
+	for _, info := range r.paths {
+		paths = append(paths, info.Path)
+	}
+	return paths
+}
+
+// RelativePaths returns only the relative paths
+func (r *Result) RelativePaths() []string {
+	var paths []string
+	for _, info := range r.paths {
+		paths = append(paths, info.RelativePath)
+	}
+	return paths
+}
+
+// QuotedRelativePaths returns relative paths quoted for shell usage
+func (r *Result) QuotedRelativePaths() []string {
+	var quoted []string
+	for _, info := range r.paths {
+		quoted = append(quoted, fmt.Sprintf("'%s'", info.RelativePath))
+	}
+	return quoted
+}
+
+// QuotedAbsolutePaths returns absolute paths quoted for shell usage
+func (r *Result) QuotedAbsolutePaths() []string {
+	var quoted []string
+	for _, info := range r.paths {
+		quoted = append(quoted, fmt.Sprintf("'%s'", info.Path))
+	}
+	return quoted
+}
+
+// Count returns the number of matched paths
+func (r *Result) Count() int {
+	return len(r.paths)
+}
+
+// Empty returns true if no paths were found
+func (r *Result) Empty() bool {
+	return len(r.paths) == 0
+}
+
 // Processor handles generic path discovery and processing
 type Processor struct {
 	root     string
@@ -42,9 +98,9 @@ func NewProcessor(root string, patterns *regex.Processor) (*Processor, error) {
 	}, nil
 }
 
-// FindPaths discovers all paths matching the processor's regex patterns
-func (p *Processor) FindPaths() ([]Info, error) {
-	return p.FindPathsWithOptions(FindOptions{})
+// Find discovers all paths matching the processor's regex patterns
+func (p *Processor) Find() (*Result, error) {
+	return p.FindWithOptions(FindOptions{})
 }
 
 // FindOptions controls the behavior of path finding
@@ -59,8 +115,8 @@ type FindOptions struct {
 	LogDescription string
 }
 
-// FindPathsWithOptions discovers all paths matching the processor's regex patterns with custom options
-func (p *Processor) FindPathsWithOptions(opts FindOptions) ([]Info, error) {
+// FindWithOptions discovers all paths matching the processor's regex patterns with custom options
+func (p *Processor) FindWithOptions(opts FindOptions) (*Result, error) {
 	// Set defaults
 	if !opts.IncludeFiles && !opts.IncludeDirs {
 		opts.IncludeFiles = true
@@ -162,16 +218,16 @@ func (p *Processor) FindPathsWithOptions(opts FindOptions) ([]Info, error) {
 
 	fmt.Printf("%s Found %d %s (checked %d paths total)\n", opts.LogPrefix, matchedCount, opts.LogDescription, checkedPaths)
 
-	// Convert paths to Info structs
-	var results []Info
+	// Convert paths to Info structs and return Result
+	var pathInfos []Info
 	for _, pathPair := range matchedPaths {
-		results = append(results, Info{
+		pathInfos = append(pathInfos, Info{
 			Path:         pathPair.absolutePath,
 			RelativePath: pathPair.relativePath,
 		})
 	}
 
-	return results, nil
+	return &Result{paths: pathInfos}, nil
 }
 
 // GetRegexStrings returns the regex patterns as strings

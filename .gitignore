@@ -20,6 +20,9 @@ bin/
 build/
 dist/
 
+/githook
+/assignment-pr-creator
+
 # IDE files
 .vscode/
 .idea/

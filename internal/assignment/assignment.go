@@ -117,7 +117,7 @@ func (ap *Processor) findAssignments() ([]string, error) {
 	}
 
 	// Find all matching directories (only directories, not files)
-	matchingPaths, err := pathsProcessor.FindPathsWithOptions(paths.FindOptions{
+	result, err := pathsProcessor.FindWithOptions(paths.FindOptions{
 		IncludeFiles:   false, // Only directories
 		IncludeDirs:    true,
 		LogPrefix:      "📁",
@@ -127,11 +127,8 @@ func (ap *Processor) findAssignments() ([]string, error) {
 		return nil, fmt.Errorf("failed to find assignment paths: %w", err)
 	}
 
-	// Convert path Info structs to string paths and sort
-	var assignments []string
-	for _, pathInfo := range matchingPaths {
-		assignments = append(assignments, pathInfo.Path)
-	}
+	// Get absolute paths and sort
+	assignments := result.AbsolutePaths()
 	sort.Strings(assignments)
 
 	return assignments, nil
