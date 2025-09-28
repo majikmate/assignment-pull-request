@@ -3,33 +3,12 @@ package protect
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 
 	"github.com/majikmate/assignment-pull-request/internal/git"
 	"github.com/majikmate/assignment-pull-request/internal/paths"
+	"github.com/majikmate/assignment-pull-request/internal/permissions"
 	"github.com/majikmate/assignment-pull-request/internal/regex"
-	"github.com/majikmate/assignment-pull-request/internal/userutil"
 )
-
-const (
-	// User and ownership constants
-	mmUser      = "majikmate"
-	mmOwner     = mmUser + ":" + mmUser
-	stagePrefix = mmUser + "-protect-sync-stage-"
-
-	// Path constants
-	githookRsyncPath = "/etc/git/hooks/githook-rsync"
-	workspacesPath   = "/workspaces/"
-	tmpPath          = "/tmp/"
-
-	// Pattern constants
-	stagePatternRegex = `^` + tmpPath + stagePrefix + `[a-zA-Z0-9]{8,}$`
-)
-
-// System paths that are restricted for security (defense-in-depth)
-var systemPaths = []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/boot/", "/sys/", "/proc/", "/dev/"}
 
 // Processor handles path protection operations
 type Processor struct {
@@ -153,7 +132,7 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPathsInfo *paths.Info) (strin
 	fmt.Printf("  Building snapshot from HEAD...\n")
 
 	// Create staging directory where we'll extract the clean HEAD version
-	stageDir, err := os.MkdirTemp("", stagePrefix)
+	stageDir, err := os.MkdirTemp("", permissions.StagePrefix)
 	if err != nil {
 		return "", fmt.Errorf("failed to create staging directory: %w", err)
 	}
@@ -175,85 +154,31 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPathsInfo *paths.Info) (strin
 		return "", fmt.Errorf("failed to build snapshot from HEAD: %w", err)
 	}
 
-	// Set permissions in staging area before atomic sync
-	if err := p.setPermissions(stageDir); err != nil {
-		return "", fmt.Errorf("failed to set permissions in staging area: %w", err)
-	}
-
 	return stageDir, nil
 }
 
-// mirrorToWorkingTree syncs the snapshot to working tree with majikmate ownership
+// applyPermissionsToWorkingTree syncs the snapshot to working tree with majikmate ownership
 func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *paths.Info) error {
-	fmt.Printf("  Mirroring to working tree with %s ownership...\n", mmUser)
+	fmt.Printf("  Mirroring to working tree...\n")
 
 	if protectedPathsInfo.Empty() {
 		return nil
 	}
 
-	fmt.Printf("    Executing atomic rsync for protected paths individually...\n")
+	fmt.Printf("    Executing atomic rsync for entire staging directory...\n")
 
-	// Get current user for SUDO_USER environment variable
-	currentUser, err := userutil.GetCurrentUser()
+	// Create PermissionsProcessor instance
+	permissionsProcessor, err := permissions.NewProcessor()
 	if err != nil {
-		return fmt.Errorf("failed to determine current user: %w", err)
+		return fmt.Errorf("failed to create permissions processor: %w", err)
 	}
 
-	// Get unique top-level directories from the protected paths
-	topLevelDirs := protectedPathsInfo.TopLevelDirectories()
-
-	// Sync each unique top-level directory individually
-	for _, dirName := range topLevelDirs {
-		rsyncSource := filepath.Join(stageDir, dirName) + string(filepath.Separator) // Source with trailing slash
-		rsyncDest := filepath.Join(p.repositoryRoot, dirName)                        // Destination without trailing slash
-
-		// Check if source exists in staging directory
-		if _, err := os.Stat(filepath.Join(stageDir, dirName)); os.IsNotExist(err) {
-			fmt.Printf("    Skipping %s (not found in staging)\n", dirName)
-			continue
-		}
-
-		fmt.Printf("    Syncing %s...\n", dirName)
-
-		// Run githook-rsync with sudo for ownership operations
-		rsyncCmd := exec.Command("sudo", githookRsyncPath, rsyncSource, rsyncDest)
-		rsyncCmd.Env = append(os.Environ(), "SUDO_USER="+currentUser)
-		rsyncCmd.Stdout = os.Stdout
-		rsyncCmd.Stderr = os.Stderr
-
-		if err := rsyncCmd.Run(); err != nil {
-			return fmt.Errorf("atomic rsync failed for %s: %w", dirName, err)
-		}
+	// Execute githook-rsync with sudo for ownership operations
+	if err := permissionsProcessor.ExecuteUpdatePermissions(stageDir, p.repositoryRoot); err != nil {
+		return err
 	}
 
 	fmt.Printf("    ✅ Atomic sync completed for %d protected path(s)\n", protectedPathsInfo.Count())
-	return nil
-}
-
-// setPermissions sets correct permissions on all files in the staging area
-func (p *Processor) setPermissions(stageDir string) error {
-	fmt.Printf("    Setting permissions in staging area...\n")
-
-	// Use chmod -R with symbolic mode that preserves executable files:
-	// u=rwX,go=rX = user: read+write+execute_if_dir_or_executable
-	//               group+other: read+execute_if_dir_or_executable
-	// 'X' sets execute permission on:
-	//   - Directories (always, for traversal)
-	//   - Files that already have execute permission (preserves executables)
-	// This results in:
-	//   - Directories: 0755 (always executable for traversal)
-	//   - Regular files: 0644 (not executable unless they were already)
-	//   - Executable files: 0755 (preserve executable status)
-	commands := []string{
-		fmt.Sprintf("cd '%s'", stageDir),
-		"chmod -R u=rwX,go=rX .", // Smart permission setting that preserves executables
-	}
-
-	command := strings.Join(commands, " && ")
-	if _, err := p.runCommandAsUser(command); err != nil {
-		return fmt.Errorf("failed to set permissions in staging area: %w", err)
-	}
-
 	return nil
 }
 
@@ -267,32 +192,4 @@ func (p *Processor) applySkipWorktreeFlags(protectedPathsInfo *paths.Info) error
 
 	quotedPaths := protectedPathsInfo.QuotedRelativePaths()
 	return p.gitOps.ApplySkipWorktreeFlags(quotedPaths)
-}
-
-// runCommandAsUser executes a command as the original user (never root)
-// Handles both sudo and non-sudo contexts
-func (p *Processor) runCommandAsUser(command string) (string, error) {
-	sudoUser := os.Getenv("SUDO_USER")
-
-	// If we're not running under sudo, use the current user directly
-	if sudoUser == "" {
-		if _, err := userutil.GetValidatedCurrentUser(); err != nil {
-			return "", err
-		}
-
-		// Not under sudo - run command directly as current user
-		cmd := exec.Command("bash", "-lc", command)
-		output, err := cmd.CombinedOutput()
-		return string(output), err
-	}
-
-	// We are running under sudo - validate sudoUser
-	if err := userutil.ValidateUser(sudoUser); err != nil {
-		return "", fmt.Errorf("SUDO_USER validation failed: %w", err)
-	}
-
-	cmd := exec.Command("sudo", "-u", sudoUser, "bash", "-lc", command)
-	output, err := cmd.CombinedOutput()
-
-	return string(output), err
 }

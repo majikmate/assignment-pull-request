@@ -1,4 +1,4 @@
-package protect
+package permissions
 
 import (
 	"fmt"
@@ -14,25 +14,44 @@ import (
 	"github.com/majikmate/assignment-pull-request/internal/userutil"
 )
 
-// RsyncWrapper provides secure rsync operations for githook path protection
-type RsyncWrapper struct {
+// Security-related constants for rsync operations
+const (
+	// User and ownership constants
+	mmUser      = "majikmate"
+	mmOwner     = mmUser + ":" + mmUser
+	StagePrefix = mmUser + "-protect-sync-stage-"
+
+	// Path constants for security validation (need to be hardcoded)
+	githookRsyncPath = "/etc/git/hooks/githook-rsync"
+	workspacesPath   = "/workspaces/"
+	tmpPath          = "/tmp/"
+
+	// Pattern constants for staging directory validation
+	stagePatternRegex = `^` + tmpPath + StagePrefix + `[a-zA-Z0-9]{8,}$`
+)
+
+// System paths that are restricted for security (defense-in-depth)
+var systemPaths = []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/boot/", "/sys/", "/proc/", "/dev/"}
+
+// Processor provides secure rsync operations for githook path protection
+type Processor struct {
 	realUser string
 }
 
-// NewRsyncWrapper creates a new secure rsync wrapper
-func NewRsyncWrapper() (*RsyncWrapper, error) {
+// NewProcessor creates a new secure rsync wrapper
+func NewProcessor() (*Processor, error) {
 	realUser, err := userutil.GetValidatedRealUser()
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine real user: %w", err)
 	}
 
-	return &RsyncWrapper{
+	return &Processor{
 		realUser: realUser,
 	}, nil
 }
 
-// SyncDirectory performs secure rsync from staging directory to working tree
-func (rw *RsyncWrapper) SyncDirectory(source, dest string) error {
+// UpdatePermissions performs secure rsync from staging directory to working tree
+func (rw *Processor) UpdatePermissions(source, dest string) error {
 	// Validate arguments
 	if source == "" || dest == "" {
 		return fmt.Errorf("source and destination paths are required")
@@ -64,11 +83,11 @@ func (rw *RsyncWrapper) SyncDirectory(source, dest string) error {
 	}
 
 	// Execute the secure rsync operation
-	return rw.executeRsync(sourceReal, destReal)
+	return rw.updatePermissions(sourceReal, destReal)
 }
 
 // validateSourcePath validates the source directory meets security requirements
-func (rw *RsyncWrapper) validateSourcePath(sourcePath string) error {
+func (rw *Processor) validateSourcePath(sourcePath string) error {
 	// Source must be under /tmp and within a valid staging directory
 	stagePattern := regexp.MustCompile(stagePatternRegex)
 
@@ -114,7 +133,7 @@ func (rw *RsyncWrapper) validateSourcePath(sourcePath string) error {
 }
 
 // validateDestinationPath validates the destination directory meets security requirements
-func (rw *RsyncWrapper) validateDestinationPath(destPath string) error {
+func (rw *Processor) validateDestinationPath(destPath string) error {
 	// Destination must exist, be a directory, not be a symlink
 	destInfo, err := os.Lstat(destPath)
 	if err != nil {
@@ -158,7 +177,7 @@ func (rw *RsyncWrapper) validateDestinationPath(destPath string) error {
 }
 
 // validateOwnership checks if a path is owned by the specified user
-func (rw *RsyncWrapper) validateOwnership(path, expectedUser string) error {
+func (rw *Processor) validateOwnership(path, expectedUser string) error {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("cannot determine ownership of %s: %w", path, err)
@@ -183,24 +202,47 @@ func (rw *RsyncWrapper) validateOwnership(path, expectedUser string) error {
 	return nil
 }
 
-// executeRsync runs the actual rsync command with secure parameters
-func (rw *RsyncWrapper) executeRsync(sourcePath, destPath string) error {
-	// Prepare rsync command with explicit, safe parameters
+// updatePermissions runs the actual rsync command with secure parameters
+func (rw *Processor) updatePermissions(sourcePath, destPath string) error {
+	// First, set ownership on all content in the source staging directory (but not the directory itself)
+	chownCmd := exec.Command("find", sourcePath, "-mindepth", "1", "-exec", "chown", mmOwner, "{}", "+")
+	if err := chownCmd.Run(); err != nil {
+		return fmt.Errorf("failed to set ownership in staging directory: %w", err)
+	}
+
+	// Set permissions using chmod with symbolic mode that preserves executable files:
+	// u=rwX,go=rX = user: read+write+execute_if_dir_or_executable
+	//               group+other: read+execute_if_dir_or_executable
+	// 'X' sets execute permission on:
+	//   - Directories (always, for traversal)
+	//   - Files that already have execute permission (preserves executables)
+	// This results in:
+	//   - Directories: 0755 (always executable for traversal)
+	//   - Regular files: 0644 (not executable unless they were already)
+	//   - Executable files: 0755 (preserve executable status)
+	chmodCmd := exec.Command("find", sourcePath, "-mindepth", "1", "-exec", "chmod", "u=rwX,go=rX", "{}", "+")
+	if err := chmodCmd.Run(); err != nil {
+		return fmt.Errorf("failed to set permissions in staging directory: %w", err)
+	}
+
+	// Use rsync with specific flags to sync contents without affecting destination directory
 	args := []string{
-		"--archive",
+		"--recursive", // Recurse into directories
+		"--links",     // Copy symlinks as symlinks
+		"--perms",     // Preserve permissions
+		"--times",     // Preserve modification times
+		"--group",     // Preserve group
+		"--owner",     // Preserve owner (from our pre-chown)
 		"--verbose",
-		"--no-owner",
-		"--no-group",
-		"--omit-dir-times",
-		"--chown=" + mmOwner,
+		"--omit-dir-times", // Don't update timestamps on existing destination directories
 		"--no-specials",
 		"--no-devices",
 		"--safe-links",
 		"--exclude=.git",
 		"--exclude=.git/",
 		"--exclude=.git/*",
-		sourcePath + "/", // Ensure trailing slash
-		destPath,
+		filepath.Clean(sourcePath) + string(filepath.Separator), // Trailing slash means "sync contents of this directory"
+		filepath.Clean(destPath) + string(filepath.Separator),   // Trailing slash means "into this directory" (don't replace it)
 	}
 
 	cmd := exec.Command("rsync", args...)
@@ -212,6 +254,46 @@ func (rw *RsyncWrapper) executeRsync(sourcePath, destPath string) error {
 	// Execute the command
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("rsync failed: %w", err)
+	}
+
+	return nil
+}
+
+// ExecuteUpdatePermissions executes the githook-rsync binary with sudo for privileged operations
+func (rw *Processor) ExecuteUpdatePermissions(stageDir, repositoryRoot string) error {
+	if stageDir == "" || repositoryRoot == "" {
+		return fmt.Errorf("all parameters are required for githook rsync execution")
+	}
+
+	// Resolve paths to absolute canonical paths to prevent traversal
+	stageDirReal, err := filepath.Abs(filepath.Clean(stageDir))
+	if err != nil {
+		return fmt.Errorf("cannot resolve stage directory path: %w", err)
+	}
+
+	repositoryRootReal, err := filepath.Abs(filepath.Clean(repositoryRoot))
+	if err != nil {
+		return fmt.Errorf("cannot resolve repository root path: %w", err)
+	}
+
+	// Validate stage directory using existing security validations
+	if err := rw.validateSourcePath(stageDirReal); err != nil {
+		return fmt.Errorf("stage directory validation failed: %w", err)
+	}
+
+	// Validate repository root using existing security validations
+	if err := rw.validateDestinationPath(repositoryRootReal); err != nil {
+		return fmt.Errorf("repository root validation failed: %w", err)
+	}
+
+	// Run githook-rsync with sudo for ownership operations
+	rsyncCmd := exec.Command("sudo", githookRsyncPath, stageDirReal, repositoryRootReal)
+	rsyncCmd.Env = append(os.Environ(), "SUDO_USER="+rw.realUser)
+	rsyncCmd.Stdout = os.Stdout
+	rsyncCmd.Stderr = os.Stderr
+
+	if err := rsyncCmd.Run(); err != nil {
+		return fmt.Errorf("atomic rsync failed: %w", err)
 	}
 
 	return nil

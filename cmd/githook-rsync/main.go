@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/majikmate/assignment-pull-request/internal/protect"
+	"github.com/majikmate/assignment-pull-request/internal/permissions"
 )
 
 func main() {
@@ -18,15 +18,15 @@ func main() {
 	source := os.Args[1]
 	dest := os.Args[2]
 
-	// Create rsync wrapper
-	wrapper, err := protect.NewRsyncWrapper()
+	// Create permissions processor
+	processor, err := permissions.NewProcessor()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Perform secure sync
-	if err := wrapper.SyncDirectory(source, dest); err != nil {
+	if err := processor.UpdatePermissions(source, dest); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
