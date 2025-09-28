@@ -191,15 +191,7 @@ func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *pat
 		return nil
 	}
 
-	// Use secure githook-rsync binary for file ownership operations
-	// This binary is installed by root to /etc/git/hooks/ and cannot be tampered with by users
-	rsyncSource := filepath.Join(stageDir, "") + string(filepath.Separator) // Ensure trailing slash
-	rsyncDest := filepath.Clean(p.repositoryRoot)                           // Clean path, no trailing slash
-
-	// Use fixed secure path - githook-rsync is installed by root, not user-manageable
-	rsyncBinaryPath := githookRsyncPath
-
-	fmt.Printf("    Executing atomic rsync for all protected paths...\n")
+	fmt.Printf("    Executing atomic rsync for protected paths individually...\n")
 
 	// Get current user for SUDO_USER environment variable
 	currentUser, err := userutil.GetCurrentUser()
@@ -207,14 +199,31 @@ func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *pat
 		return fmt.Errorf("failed to determine current user: %w", err)
 	}
 
-	// Run githook-rsync with sudo for ownership operations
-	rsyncCmd := exec.Command("sudo", rsyncBinaryPath, rsyncSource, rsyncDest)
-	rsyncCmd.Env = append(os.Environ(), "SUDO_USER="+currentUser)
-	rsyncCmd.Stdout = os.Stdout
-	rsyncCmd.Stderr = os.Stderr
+	// Get unique top-level directories from the protected paths
+	topLevelDirs := protectedPathsInfo.TopLevelDirectories()
 
-	if err := rsyncCmd.Run(); err != nil {
-		return fmt.Errorf("atomic rsync failed: %w", err)
+	// Sync each unique top-level directory individually
+	for _, dirName := range topLevelDirs {
+		rsyncSource := filepath.Join(stageDir, dirName) + string(filepath.Separator) // Source with trailing slash
+		rsyncDest := filepath.Join(p.repositoryRoot, dirName)                        // Destination without trailing slash
+
+		// Check if source exists in staging directory
+		if _, err := os.Stat(filepath.Join(stageDir, dirName)); os.IsNotExist(err) {
+			fmt.Printf("    Skipping %s (not found in staging)\n", dirName)
+			continue
+		}
+
+		fmt.Printf("    Syncing %s...\n", dirName)
+
+		// Run githook-rsync with sudo for ownership operations
+		rsyncCmd := exec.Command("sudo", githookRsyncPath, rsyncSource, rsyncDest)
+		rsyncCmd.Env = append(os.Environ(), "SUDO_USER="+currentUser)
+		rsyncCmd.Stdout = os.Stdout
+		rsyncCmd.Stderr = os.Stderr
+
+		if err := rsyncCmd.Run(); err != nil {
+			return fmt.Errorf("atomic rsync failed for %s: %w", dirName, err)
+		}
 	}
 
 	fmt.Printf("    ✅ Atomic sync completed for %d protected path(s)\n", protectedPathsInfo.Count())

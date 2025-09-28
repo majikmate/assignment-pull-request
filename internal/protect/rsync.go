@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/majikmate/assignment-pull-request/internal/git"
 	"github.com/majikmate/assignment-pull-request/internal/userutil"
 )
 
@@ -68,9 +69,25 @@ func (rw *RsyncWrapper) SyncDirectory(source, dest string) error {
 
 // validateSourcePath validates the source directory meets security requirements
 func (rw *RsyncWrapper) validateSourcePath(sourcePath string) error {
-	// Source must be under /tmp and match our specific pattern
+	// Source must be under /tmp and within a valid staging directory
 	stagePattern := regexp.MustCompile(stagePatternRegex)
-	if !stagePattern.MatchString(sourcePath) {
+
+	// Check if the source path itself matches (for full staging directory sync)
+	// or if its parent directory matches (for subdirectory sync)
+	var isValid bool
+
+	// First check if the path itself matches the staging pattern
+	if stagePattern.MatchString(sourcePath) {
+		isValid = true
+	} else {
+		// Check if the parent directory matches the staging pattern
+		parent := filepath.Dir(sourcePath)
+		if stagePattern.MatchString(parent) {
+			isValid = true
+		}
+	}
+
+	if !isValid {
 		return fmt.Errorf("invalid source directory pattern: %s", sourcePath)
 	}
 
@@ -112,10 +129,11 @@ func (rw *RsyncWrapper) validateDestinationPath(destPath string) error {
 		return fmt.Errorf("destination must be a real directory, not a symlink")
 	}
 
-	// Destination must contain .git (be a git repository)
-	gitPath := filepath.Join(destPath, ".git")
-	if _, err := os.Stat(gitPath); err != nil {
-		return fmt.Errorf("destination is not a git repository")
+	// Destination must be within a git repository
+	// Use git rev-parse --git-dir to check if we're in a git repository
+	gitOps := git.NewOperationsWithDir(false, destPath)
+	if _, err := gitOps.GetGitDir(); err != nil {
+		return fmt.Errorf("destination is not within a git repository: %w", err)
 	}
 
 	// Destination must not be under sensitive system directories (defense-in-depth)
@@ -171,7 +189,6 @@ func (rw *RsyncWrapper) executeRsync(sourcePath, destPath string) error {
 	args := []string{
 		"--archive",
 		"--verbose",
-		"--delete",
 		"--no-owner",
 		"--no-group",
 		"--omit-dir-times",

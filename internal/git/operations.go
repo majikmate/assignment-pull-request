@@ -353,8 +353,9 @@ func (o *Operations) BuildSnapshotFromHEAD(paths []string, stageDir string) erro
 	}
 
 	pathsStr := strings.Join(paths, " ")
-	// Use a single complex shell command instead of joining with &&
-	command := fmt.Sprintf(`TMPIDX=$(mktemp) && trap 'rm -f "$TMPIDX"' EXIT && GIT_INDEX_FILE="$TMPIDX" git read-tree HEAD -- %s 2>/dev/null || true && if GIT_INDEX_FILE="$TMPIDX" git ls-files -z | grep -q .; then GIT_INDEX_FILE="$TMPIDX" git checkout-index -a --prefix='%s/' >/dev/null; fi`, pathsStr, stageDir)
+	// Create temporary index, populate with HEAD, then checkout files under specific paths
+	// Use --ignore-skip-worktree-bits to checkout files even if they have skip-worktree flags
+	command := fmt.Sprintf(`TMPIDX=$(mktemp) && trap 'rm -f "$TMPIDX"' EXIT && GIT_INDEX_FILE="$TMPIDX" git read-tree HEAD && if GIT_INDEX_FILE="$TMPIDX" git ls-files -z -- %s | head -c1 | grep -q .; then GIT_INDEX_FILE="$TMPIDX" git ls-files -z -- %s | xargs -0 -r git checkout-index --ignore-skip-worktree-bits --prefix='%s/' >/dev/null; fi`, pathsStr, pathsStr, stageDir)
 
 	_, err := o.runCommandInContext(command, "Build snapshot from HEAD")
 	return err

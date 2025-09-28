@@ -85,6 +85,39 @@ func (i *Info) QuotedAbsolutePaths() []string {
 	return i.quotedAbsolute
 }
 
+// TopLevelDirectories returns unique top-level directory names from all relative paths
+func (i *Info) TopLevelDirectories() []string {
+	if len(i.entries) == 0 {
+		return nil
+	}
+
+	topLevelDirs := make(map[string]bool)
+	for _, pathEntry := range i.entries {
+		// Clean the relative path and get the first directory component
+		cleanPath := filepath.Clean(pathEntry.RelativePath)
+
+		// Handle edge cases: "." or empty paths
+		if cleanPath == "." || cleanPath == "" {
+			continue
+		}
+
+		// Split the path and get the first element
+		firstDir := strings.Split(cleanPath, string(filepath.Separator))[0]
+		if firstDir != "" {
+			topLevelDirs[firstDir] = true
+		}
+	}
+
+	// Convert map to sorted slice for consistent ordering
+	result := make([]string, 0, len(topLevelDirs))
+	for dirName := range topLevelDirs {
+		result = append(result, dirName)
+	}
+	sort.Strings(result)
+
+	return result
+}
+
 // Count returns the number of matched paths
 func (i *Info) Count() int {
 	return len(i.entries)
