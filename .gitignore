@@ -21,6 +21,7 @@ build/
 dist/
 
 /githook
+/githook-rsync
 /assignment-pr-creator
 
 # IDE files

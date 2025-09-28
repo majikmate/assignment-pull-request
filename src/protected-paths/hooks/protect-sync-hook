@@ -4,7 +4,9 @@ set -euo pipefail
 # Configuration
 MODULE="github.com/majikmate/assignment-pull-request"
 BINARY_NAME="githook"
+RSYNC_BINARY_NAME="githook-rsync"
 BINARY_PATH="${GOBIN:-$(go env GOPATH)/bin}/${BINARY_NAME}"
+RSYNC_BINARY_PATH="${GOBIN:-$(go env GOPATH)/bin}/${RSYNC_BINARY_NAME}"
 
 # Determine which git hook is calling us
 HOOK_TYPE="$(basename "$0")"
@@ -15,8 +17,8 @@ if ! command -v go >/dev/null 2>&1; then
     exit 0
 fi
 
-# Install/update binary to latest version
-echo "Installing/updating protect-sync to latest version..." >&2
+# Install/update binaries to latest version
+echo "Installing/updating protect-sync binaries to latest version..." >&2
 if go install "${MODULE}/cmd/${BINARY_NAME}@latest" 2>/dev/null; then
     echo "Successfully installed/updated ${BINARY_NAME}" >&2
 elif [[ -x "$BINARY_PATH" ]]; then
@@ -24,6 +26,15 @@ elif [[ -x "$BINARY_PATH" ]]; then
 else
     echo "No ${BINARY_NAME} binary available and remote install failed, skipping" >&2
     exit 0
+fi
+
+# Install/update githook-rsync binary
+if go install "${MODULE}/cmd/${RSYNC_BINARY_NAME}@latest" 2>/dev/null; then
+    echo "Successfully installed/updated ${RSYNC_BINARY_NAME}" >&2
+elif [[ -x "$RSYNC_BINARY_PATH" ]]; then
+    echo "Install failed, using existing ${RSYNC_BINARY_NAME} at ${RSYNC_BINARY_PATH}" >&2
+else
+    echo "Warning: No ${RSYNC_BINARY_NAME} binary available and remote install failed" >&2
 fi
 
 # Now run the actual hook logic

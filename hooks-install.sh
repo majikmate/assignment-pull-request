@@ -174,8 +174,9 @@ function install_hooks_and_binaries() {
     fi
 
     # Install the githook binary
-    echo "   🔨 Installing githook binary..."
+    echo "   🔨 Installing githook binaries..."
     go install ./cmd/githook
+    go install ./cmd/githook-rsync
     
     # Install the shared git hook (calls githook binary)
     sudo install -m 0755 src/protected-paths/hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
@@ -185,9 +186,6 @@ function install_hooks_and_binaries() {
         echo "   🔧 Patching protect-sync-hook for local source tree..."
         sudo sed -i 's/^if go install/if false \&\& go install/' /etc/git/hooks/protect-sync-hook
     fi
-    
-    # Install the secure rsync wrapper
-    sudo install -m 755 src/protected-paths/scripts/githook-rsync /etc/git/hooks/githook-rsync
     
     if [ "$is_local_source" = "true" ]; then
         echo "   ✅ Installed from local source tree"
@@ -256,17 +254,8 @@ for hook in post-checkout post-merge post-rewrite post-applypatch post-commit po
   echo "   Linked $hook -> protect-sync-hook"
 done
 
-# --- Configure sudo permissions for protected path operations ---
-echo "🔐 Configuring sudo permissions..."
-
-# Configure sudoers to allow only our secure wrapper
-sudo tee /etc/sudoers.d/githook-protect > /dev/null <<EOF
-# Allow $OWNER_USER to run secure githook-rsync wrapper for file ownership operations
-$OWNER_USER ALL=(root) NOPASSWD: /etc/git/hooks/githook-rsync
-EOF
-
-sudo chmod 440 /etc/sudoers.d/githook-protect
-echo "   Configured sudo permissions for $OWNER_USER"
+# --- Sudo permissions no longer needed - Go binaries handle security internally ---
+echo "✅ Security handled internally by Go binaries (no sudo configuration needed)"
 
 # --- Print installation summary ---
 echo "[protected-paths] Git hooks installed. Dev user: $OWNER_USER, Protection user: majikmate."
@@ -274,5 +263,5 @@ echo "🎯 Features:"
 echo "   - Assignment-based sparse checkout (post-checkout branch changes)"
 echo "   - Protected path synchronization (all working tree modifications)"
 echo "   - Automatic configuration from workflow YAML files"
-echo "   - Go-based implementation"
-echo "   - Secure: hooks run as dedicated majikmate user, not root"
+echo "   - Go-based implementation with auto-updating binaries"
+echo "   - Secure: binaries handle validation internally, no root privileges needed"
