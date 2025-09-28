@@ -266,12 +266,12 @@ func (rw *Processor) ExecuteUpdatePermissions(stageDir, repositoryRoot string) e
 	}
 
 	// Resolve paths to absolute canonical paths to prevent traversal
-	stageDirReal, err := filepath.Abs(filepath.Clean(stageDir))
+	stageDirReal, err := filepath.Abs(filepath.Clean(stageDir) + string(filepath.Separator))
 	if err != nil {
 		return fmt.Errorf("cannot resolve stage directory path: %w", err)
 	}
 
-	repositoryRootReal, err := filepath.Abs(filepath.Clean(repositoryRoot))
+	repositoryRootReal, err := filepath.Abs(filepath.Clean(repositoryRoot) + string(filepath.Separator))
 	if err != nil {
 		return fmt.Errorf("cannot resolve repository root path: %w", err)
 	}

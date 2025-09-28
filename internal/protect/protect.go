@@ -69,7 +69,7 @@ func (p *Processor) ProtectPaths(protectedFoldersPattern *regex.Processor) error
 	}
 	defer os.RemoveAll(stageDir)
 
-	if err := p.mirrorToWorkingTree(stageDir, protectedPathsInfo); err != nil {
+	if err := p.updatePermissionsInWorkingTree(stageDir, protectedPathsInfo); err != nil {
 		return err
 	}
 
@@ -158,14 +158,12 @@ func (p *Processor) buildSnapshotFromHEAD(protectedPathsInfo *paths.Info) (strin
 }
 
 // applyPermissionsToWorkingTree syncs the snapshot to working tree with majikmate ownership
-func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *paths.Info) error {
-	fmt.Printf("  Mirroring to working tree...\n")
+func (p *Processor) updatePermissionsInWorkingTree(stageDir string, protectedPathsInfo *paths.Info) error {
+	fmt.Printf("  Updating permissions in working tree...\n")
 
 	if protectedPathsInfo.Empty() {
 		return nil
 	}
-
-	fmt.Printf("    Executing atomic rsync for entire staging directory...\n")
 
 	// Create PermissionsProcessor instance
 	permissionsProcessor, err := permissions.NewProcessor()
