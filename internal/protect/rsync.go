@@ -69,7 +69,7 @@ func (rw *RsyncWrapper) SyncDirectory(source, dest string) error {
 // validateSourcePath validates the source directory meets security requirements
 func (rw *RsyncWrapper) validateSourcePath(sourcePath string) error {
 	// Source must be under /tmp and match our specific pattern
-	stagePattern := regexp.MustCompile(`^/tmp/majikmate-protect-sync-stage-[a-zA-Z0-9]{10,}$`)
+	stagePattern := regexp.MustCompile(stagePatternRegex)
 	if !stagePattern.MatchString(sourcePath) {
 		return fmt.Errorf("invalid source directory pattern: %s", sourcePath)
 	}
@@ -119,7 +119,6 @@ func (rw *RsyncWrapper) validateDestinationPath(destPath string) error {
 	}
 
 	// Destination must not be under sensitive system directories (defense-in-depth)
-	systemPaths := []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/boot/", "/sys/", "/proc/", "/dev/"}
 	for _, systemPath := range systemPaths {
 		if strings.HasPrefix(destPath, systemPath) {
 			return fmt.Errorf("cannot sync to system directories")
@@ -127,8 +126,8 @@ func (rw *RsyncWrapper) validateDestinationPath(destPath string) error {
 	}
 
 	// Destination must be under /workspaces (primary location restriction)
-	if !strings.HasPrefix(destPath, "/workspaces/") {
-		return fmt.Errorf("destination must be under /workspaces directory")
+	if !strings.HasPrefix(destPath, workspacesPath) {
+		return fmt.Errorf("destination must be under %s directory", workspacesPath)
 	}
 
 	// Parent directory of destination must be owned by current user (prevent cross-user access)
@@ -176,7 +175,7 @@ func (rw *RsyncWrapper) executeRsync(sourcePath, destPath string) error {
 		"--no-owner",
 		"--no-group",
 		"--omit-dir-times",
-		"--chown=majikmate:majikmate",
+		"--chown=" + mmOwner,
 		"--no-specials",
 		"--no-devices",
 		"--safe-links",

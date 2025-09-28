@@ -14,10 +14,22 @@ import (
 )
 
 const (
+	// User and ownership constants
 	mmUser      = "majikmate"
 	mmOwner     = mmUser + ":" + mmUser
 	stagePrefix = mmUser + "-protect-sync-stage-"
+
+	// Path constants
+	githookRsyncPath = "/etc/git/hooks/githook-rsync"
+	workspacesPath   = "/workspaces/"
+	tmpPath          = "/tmp/"
+
+	// Pattern constants
+	stagePatternRegex = `^` + tmpPath + stagePrefix + `[a-zA-Z0-9]{10,}$`
 )
+
+// System paths that are restricted for security (defense-in-depth)
+var systemPaths = []string{"/etc/", "/usr/", "/bin/", "/sbin/", "/boot/", "/sys/", "/proc/", "/dev/"}
 
 // Processor handles path protection operations
 type Processor struct {
@@ -180,18 +192,24 @@ func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *pat
 	}
 
 	// Use secure githook-rsync binary for file ownership operations
-	// This binary validates arguments and only allows the specific operation we need
+	// This binary is installed by root to /etc/git/hooks/ and cannot be tampered with by users
 	rsyncSource := filepath.Join(stageDir, "") + string(filepath.Separator) // Ensure trailing slash
 	rsyncDest := filepath.Clean(p.repositoryRoot)                           // Clean path, no trailing slash
 
-	// Find githook-rsync binary in Go bin path
-	rsyncBinaryPath, err := p.findGithookRsyncBinary()
-	if err != nil {
-		return fmt.Errorf("failed to find githook-rsync binary: %w", err)
-	}
+	// Use fixed secure path - githook-rsync is installed by root, not user-manageable
+	rsyncBinaryPath := githookRsyncPath
 
 	fmt.Printf("    Executing atomic rsync for all protected paths...\n")
-	rsyncCmd := exec.Command(rsyncBinaryPath, rsyncSource, rsyncDest)
+
+	// Get current user for SUDO_USER environment variable
+	currentUser, err := userutil.GetCurrentUser()
+	if err != nil {
+		return fmt.Errorf("failed to determine current user: %w", err)
+	}
+
+	// Run githook-rsync with sudo for ownership operations
+	rsyncCmd := exec.Command("sudo", rsyncBinaryPath, rsyncSource, rsyncDest)
+	rsyncCmd.Env = append(os.Environ(), "SUDO_USER="+currentUser)
 	rsyncCmd.Stdout = os.Stdout
 	rsyncCmd.Stderr = os.Stderr
 
@@ -268,44 +286,4 @@ func (p *Processor) runCommandAsUser(command string) (string, error) {
 	output, err := cmd.CombinedOutput()
 
 	return string(output), err
-}
-
-// findGithookRsyncBinary locates the githook-rsync binary in the Go bin path
-func (p *Processor) findGithookRsyncBinary() (string, error) {
-	// Try GOBIN first
-	if gobin := os.Getenv("GOBIN"); gobin != "" {
-		binaryPath := filepath.Join(gobin, "githook-rsync")
-		if _, err := os.Stat(binaryPath); err == nil {
-			return binaryPath, nil
-		}
-	}
-
-	// Try GOPATH/bin
-	if gopath := os.Getenv("GOPATH"); gopath != "" {
-		binaryPath := filepath.Join(gopath, "bin", "githook-rsync")
-		if _, err := os.Stat(binaryPath); err == nil {
-			return binaryPath, nil
-		}
-	}
-
-	// Try go env GOPATH
-	cmd := exec.Command("go", "env", "GOPATH")
-	output, err := cmd.Output()
-	if err == nil {
-		gopath := strings.TrimSpace(string(output))
-		if gopath != "" {
-			binaryPath := filepath.Join(gopath, "bin", "githook-rsync")
-			if _, err := os.Stat(binaryPath); err == nil {
-				return binaryPath, nil
-			}
-		}
-	}
-
-	// Last resort: try PATH
-	binaryPath, err := exec.LookPath("githook-rsync")
-	if err == nil {
-		return binaryPath, nil
-	}
-
-	return "", fmt.Errorf("githook-rsync binary not found in GOBIN, GOPATH/bin, or PATH")
 }

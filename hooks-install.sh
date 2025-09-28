@@ -3,7 +3,12 @@
 # GitHub Post-Checkout Hook Installer
 # This script installs the assignment-pull-request git hooks in exactly the same way 
 # as the devcontainer feature, with the exception that it checks if the current folder
-# is a complete source tree and installs from that source tree, otherwise installs 
+# is a complete source tree and installs echo "🎯 Features:"
+echo "   - Assignment-based sparse checkout (post-checkout branch changes)"
+echo "   - Protected path synchronization (all working tree modifications)"
+echo "   - Automatic configuration from workflow YAML files"
+echo "   - Go-based implementation: githook (user-managed), githook-rsync (root-owned)"
+echo "   - Secure: githook-rsync installed by root, runs with sudo for ownership operations"hat source tree, otherwise installs 
 # from the remote module.
 #
 # Usage: ./install-hook.sh [version]
@@ -173,10 +178,16 @@ function install_hooks_and_binaries() {
         exit 1
     fi
 
-    # Install the githook binary
-    echo "   🔨 Installing githook binaries..."
+    # Install the githook binary (user-manageable, auto-updating)
+    echo "   🔨 Installing githook binary..."
     go install ./cmd/githook
-    go install ./cmd/githook-rsync
+    
+    # Build and install the secure githook-rsync binary (root-owned, secure)
+    echo "   🔒 Building and installing secure githook-rsync binary..."
+    go build -o /tmp/githook-rsync ./cmd/githook-rsync
+    sudo install -m 755 /tmp/githook-rsync /etc/git/hooks/githook-rsync
+    rm -f /tmp/githook-rsync
+    echo "   📦 githook-rsync installed to /etc/git/hooks/ (root-owned, secure)"
     
     # Install the shared git hook (calls githook binary)
     sudo install -m 0755 src/protected-paths/hooks/protect-sync-hook /etc/git/hooks/protect-sync-hook
@@ -254,8 +265,18 @@ for hook in post-checkout post-merge post-rewrite post-applypatch post-commit po
   echo "   Linked $hook -> protect-sync-hook"
 done
 
-# --- Sudo permissions no longer needed - Go binaries handle security internally ---
-echo "✅ Security handled internally by Go binaries (no sudo configuration needed)"
+# --- Configure sudo permissions for githook-rsync binary operations ---
+echo "🔐 Configuring sudo permissions..."
+
+# Configure sudoers to allow the specific githook-rsync binary in /etc/git/hooks/
+sudo tee /etc/sudoers.d/githook-protect > /dev/null <<EOF
+# Allow $OWNER_USER to run secure githook-rsync binary for file ownership operations
+# Binary is installed by root to /etc/git/hooks/ and cannot be tampered with by users
+$OWNER_USER ALL=(root) NOPASSWD: /etc/git/hooks/githook-rsync
+EOF
+
+sudo chmod 440 /etc/sudoers.d/githook-protect
+echo "   Configured sudo permissions for $OWNER_USER to run /etc/git/hooks/githook-rsync"
 
 # --- Print installation summary ---
 echo "[protected-paths] Git hooks installed. Dev user: $OWNER_USER, Protection user: majikmate."
