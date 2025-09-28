@@ -93,18 +93,30 @@ func (i *Info) TopLevelDirectories() []string {
 
 	topLevelDirs := make(map[string]bool)
 	for _, pathEntry := range i.entries {
-		// Clean the relative path and get the first directory component
-		cleanPath := filepath.Clean(pathEntry.RelativePath)
+		relativePath := pathEntry.RelativePath
 
-		// Handle edge cases: "." or empty paths
-		if cleanPath == "." || cleanPath == "" {
+		// Handle empty paths
+		if relativePath == "" {
 			continue
 		}
 
-		// Split the path and get the first element
-		firstDir := strings.Split(cleanPath, string(filepath.Separator))[0]
-		if firstDir != "" {
-			topLevelDirs[firstDir] = true
+		// Clean the path to normalize separators and remove redundant elements
+		cleanPath := filepath.Clean(relativePath)
+
+		// Skip if path is just "." (current directory)
+		if cleanPath == "." {
+			continue
+		}
+
+		// Use filepath.Dir and filepath.Base to extract the first directory component
+		// For paths like "a/b/c", we want "a"
+		// For paths like ".github/workflows/test.yml", we want ".github"
+		// For paths like "file.txt", we want "file.txt" (it's a file in root)
+
+		// Split on separator and take the first part
+		parts := strings.Split(cleanPath, string(filepath.Separator))
+		if len(parts) > 0 && parts[0] != "" {
+			topLevelDirs[parts[0]] = true
 		}
 	}
 

@@ -140,8 +140,8 @@ jobs:
           assignment-regex: |
             ^none$
           protected-paths-regex: |
-            ^(.devcontainer)$
-            ^(.github)$
+            ^(\.devcontainer)$
+            ^(\.github)$
             ^(10-tutorials)$
             ^(reference-material)$
           default-branch: main
