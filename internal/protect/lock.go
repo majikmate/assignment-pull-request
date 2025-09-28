@@ -11,15 +11,15 @@ import (
 	"github.com/majikmate/assignment-pull-request/internal/git"
 )
 
-// Lock represents a file-based lock for protect operations
-type Lock struct {
+// lock represents a file-based lock for protect operations
+type lock struct {
 	lockFile string
 	file     *os.File
 }
 
 // acquireLock attempts to acquire an exclusive lock for protect operations
 // This prevents concurrent protect-sync operations on the same repository
-func acquireLock(repositoryRoot string) (*Lock, error) {
+func acquireLock(repositoryRoot string) (*lock, error) {
 	// Use Git operations to find the actual git directory (handles worktrees, submodules, etc.)
 	gitOps := git.NewOperationsWithDir(false, repositoryRoot)
 	gitDir, err := gitOps.FindGitDir()
@@ -45,7 +45,7 @@ func acquireLock(repositoryRoot string) (*Lock, error) {
 				return nil, fmt.Errorf("failed to write PID to lock file: %w", writeErr)
 			}
 
-			return &Lock{lockFile: lockFile, file: file}, nil
+			return &lock{lockFile: lockFile, file: file}, nil
 		}
 
 		// If file exists, check if the process is still alive
@@ -66,8 +66,8 @@ func acquireLock(repositoryRoot string) (*Lock, error) {
 	return nil, fmt.Errorf("timeout waiting for protect-paths lock (another operation may be in progress)")
 }
 
-// Release releases the lock
-func (l *Lock) Release() error {
+// release releases the lock
+func (l *lock) release() error {
 	if l.file != nil {
 		l.file.Close()
 	}

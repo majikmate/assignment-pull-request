@@ -40,7 +40,7 @@ func (p *Processor) ProtectPaths(protectedFoldersPattern *regex.Processor) error
 		return fmt.Errorf("failed to acquire protect-paths lock: %w", err)
 	}
 	defer func() {
-		if releaseErr := lock.Release(); releaseErr != nil {
+		if releaseErr := lock.release(); releaseErr != nil {
 			fmt.Printf("Warning: failed to release protect-paths lock: %v\n", releaseErr)
 		}
 	}()
