@@ -33,7 +33,7 @@ if [ -d "/workspaces" ]; then
     # Remove existing repo directory if it exists
     if [ -d "${REPO_NAME}" ]; then
         echo "🗑️  Removing existing local ${REPO_NAME} directory..."
-        rm -rf "${REPO_NAME}"
+        sudo rm -rf "${REPO_NAME}"
     fi
 else
     echo "📂 /workspaces directory not found, checking current environment..."
@@ -86,7 +86,7 @@ fi
 
 # Prepare a clean working directory
 if [ -d "${REPO_NAME}" ]; then
-  rm -rf "${REPO_NAME}"
+  sudo rm -rf "${REPO_NAME}"
 fi
 
 # Clone the module-html-css repository content
@@ -100,7 +100,7 @@ git remote set-url origin "https://github.com/${FULL_REPO_NAME}.git"
 echo "🧹 Setting up test workflow..."
 
 # Remove entire .github folder for clean slate
-rm -rf .github
+sudo rm -rf .github
 
 # Create .github/workflows directory
 mkdir -p .github/workflows
