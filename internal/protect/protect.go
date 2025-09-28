@@ -25,7 +25,7 @@ const (
 	tmpPath          = "/tmp/"
 
 	// Pattern constants
-	stagePatternRegex = `^` + tmpPath + stagePrefix + `[a-zA-Z0-9]{10,}$`
+	stagePatternRegex = `^` + tmpPath + stagePrefix + `[a-zA-Z0-9]{8,}$`
 )
 
 // System paths that are restricted for security (defense-in-depth)
