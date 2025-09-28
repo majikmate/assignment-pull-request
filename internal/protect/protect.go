@@ -10,6 +10,7 @@ import (
 	"github.com/majikmate/assignment-pull-request/internal/git"
 	"github.com/majikmate/assignment-pull-request/internal/paths"
 	"github.com/majikmate/assignment-pull-request/internal/regex"
+	"github.com/majikmate/assignment-pull-request/internal/userutil"
 )
 
 const (
@@ -178,12 +179,19 @@ func (p *Processor) mirrorToWorkingTree(stageDir string, protectedPathsInfo *pat
 		return nil
 	}
 
+	// Set SUDO_USER environment variable so the wrapper can determine the original user
+	currentUser, err := userutil.GetCurrentUser()
+	if err != nil {
+		return fmt.Errorf("failed to determine current user: %w", err)
+	}
+
 	// Use secure githook-rsync wrapper for file ownership operations
 	// This wrapper validates arguments and only allows the specific operation we need
 	// Source needs trailing slash to sync directory contents, destination should not have trailing slash
 	rsyncSource := filepath.Join(stageDir, "") + string(filepath.Separator) // Ensure trailing slash
 	rsyncDest := filepath.Clean(p.repositoryRoot)                           // Clean path, no trailing slash
 	rsyncCmd := exec.Command("sudo", "/etc/git/hooks/githook-rsync", rsyncSource, rsyncDest)
+	rsyncCmd.Env = append(os.Environ(), "SUDO_USER="+currentUser)
 
 	fmt.Printf("    Executing atomic rsync for all protected paths...\n")
 	output, err := rsyncCmd.CombinedOutput()
@@ -235,16 +243,25 @@ func (p *Processor) applySkipWorktreeFlags(protectedPathsInfo *paths.Info) error
 }
 
 // runCommandAsUser executes a command as the original user (never root)
-// Fails if SUDO_USER is empty or "root" to prevent privilege escalation
+// Handles both sudo and non-sudo contexts
 func (p *Processor) runCommandAsUser(command string) (string, error) {
 	sudoUser := os.Getenv("SUDO_USER")
 
-	// Fail if sudoUser is empty or root - we don't want to run as root
+	// If we're not running under sudo, use the current user directly
 	if sudoUser == "" {
-		return "", fmt.Errorf("SUDO_USER environment variable is not set - cannot determine original user")
+		if _, err := userutil.GetValidatedCurrentUser(); err != nil {
+			return "", err
+		}
+
+		// Not under sudo - run command directly as current user
+		cmd := exec.Command("bash", "-lc", command)
+		output, err := cmd.CombinedOutput()
+		return string(output), err
 	}
-	if sudoUser == "root" {
-		return "", fmt.Errorf("SUDO_USER is 'root' - refusing to run commands as root user")
+
+	// We are running under sudo - validate sudoUser
+	if err := userutil.ValidateUser(sudoUser); err != nil {
+		return "", fmt.Errorf("SUDO_USER validation failed: %w", err)
 	}
 
 	cmd := exec.Command("sudo", "-u", sudoUser, "bash", "-lc", command)

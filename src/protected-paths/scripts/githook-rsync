@@ -4,6 +4,10 @@ set -euo pipefail
 # Secure wrapper for rsync operations needed by githook
 # Only allows syncing from temp directories to working tree with majikmate ownership
 
+# Source centralized user utilities
+SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
+source "$SCRIPT_DIR/userutil.sh"
+
 # Validate arguments
 if [ "$#" -ne 2 ]; then
     echo "Error: Invalid number of arguments" >&2
@@ -13,14 +17,8 @@ fi
 SOURCE="$1"
 DEST="$2"
 
-# Get the real user who invoked sudo (not root)
-REAL_USER="${SUDO_USER:-$(whoami)}"
-
-# Security validation: Real user must not be root
-if [ "$REAL_USER" = "root" ]; then
-    echo "Error: This wrapper must not be run as root user" >&2
-    exit 1
-fi
+# Get the real user who invoked sudo (not root) using centralized utility
+REAL_USER=$(get_validated_real_user)
 
 # Security validations
 # 1. Resolve all paths to absolute canonical paths to prevent traversal

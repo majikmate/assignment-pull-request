@@ -353,21 +353,9 @@ func (o *Operations) BuildSnapshotFromHEAD(paths []string, stageDir string) erro
 	}
 
 	pathsStr := strings.Join(paths, " ")
-	commands := []string{
-		// Create temporary index file (separate from .git/index)
-		"TMPIDX=$(mktemp)",
-		// Ensure temp index cleanup on shell exit
-		"trap 'rm -f \"$TMPIDX\"' EXIT",
-		// Populate temp index with specified paths from HEAD commit
-		fmt.Sprintf("GIT_INDEX_FILE=\"$TMPIDX\" git read-tree HEAD -- %s 2>/dev/null || true", pathsStr),
-		// Check if temp index contains any files
-		"if GIT_INDEX_FILE=\"$TMPIDX\" git ls-files -z | grep -q .; then",
-		// Extract all files from temp index to staging directory
-		fmt.Sprintf("  GIT_INDEX_FILE=\"$TMPIDX\" git checkout-index -a --prefix='%s/' >/dev/null", stageDir),
-		"fi",
-	}
+	// Use a single complex shell command instead of joining with &&
+	command := fmt.Sprintf(`TMPIDX=$(mktemp) && trap 'rm -f "$TMPIDX"' EXIT && GIT_INDEX_FILE="$TMPIDX" git read-tree HEAD -- %s 2>/dev/null || true && if GIT_INDEX_FILE="$TMPIDX" git ls-files -z | grep -q .; then GIT_INDEX_FILE="$TMPIDX" git checkout-index -a --prefix='%s/' >/dev/null; fi`, pathsStr, stageDir)
 
-	command := strings.Join(commands, " && ")
 	_, err := o.runCommandInContext(command, "Build snapshot from HEAD")
 	return err
 }
