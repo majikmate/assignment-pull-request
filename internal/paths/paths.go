@@ -224,13 +224,15 @@ func (p *Processor) FindWithOptions(opts FindOptions) (*Info, error) {
 			return err
 		}
 
-		// Skip hidden files and directories (but not the current directory ".")
+		// Skip hidden files and directories, except when we might need them for pattern matching
 		baseName := filepath.Base(path)
 		if strings.HasPrefix(baseName, ".") && path != "." && path != rootDir {
-			if info.IsDir() {
-				return filepath.SkipDir
+			// For directories starting with ".", we need to check if they might match patterns
+			// before skipping them, so let them through to pattern matching
+			if !info.IsDir() {
+				// Skip hidden files (but allow hidden directories for pattern matching)
+				return nil
 			}
-			return nil
 		}
 
 		// Skip the root directory itself
