@@ -23,6 +23,7 @@ dist/
 /githook
 /githook-rsync
 /assignment-pr-creator
+/ociinfo
 
 # IDE files
 .vscode/
@@ -61,3 +62,6 @@ coverage.html
 tmp/
 *.tmp
 *.temp
+
+# Other
+.devcontainer/info.json
