@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -27,12 +25,13 @@ type OCIImageInfo struct {
 }
 
 func main() {
-	// Try to get container metadata from labels first
-	info, err := getContainerMetadata()
-	if err != nil {
-		fmt.Printf("Warning: Could not read container labels, falling back to environment variables: %v\n", err)
-		// Fallback to environment variables
-		info = getMetadataFromEnv()
+	// Get container metadata from environment variables
+	info := getMetadataFromEnv()
+
+	// Don't write info.json if Version is empty
+	if info.Version == "" {
+		fmt.Println("No OCI metadata found")
+		return
 	}
 
 	// Convert to JSON
@@ -63,86 +62,7 @@ func main() {
 	fmt.Println(string(jsonData))
 }
 
-// getContainerMetadata reads metadata from container labels
-func getContainerMetadata() (OCIImageInfo, error) {
-	// Get current container ID
-	containerID, err := getCurrentContainerID()
-	if err != nil {
-		return OCIImageInfo{}, fmt.Errorf("failed to get container ID: %w", err)
-	}
-
-	// Inspect container to get labels
-	cmd := exec.Command("docker", "inspect", "--format", "{{json .Config.Labels}}", containerID)
-	output, err := cmd.Output()
-	if err != nil {
-		return OCIImageInfo{}, fmt.Errorf("failed to inspect container: %w", err)
-	}
-
-	// Parse labels JSON
-	var labels map[string]string
-	if err := json.Unmarshal(output, &labels); err != nil {
-		return OCIImageInfo{}, fmt.Errorf("failed to parse labels JSON: %w", err)
-	}
-
-	// Extract OCI metadata from labels
-	info := OCIImageInfo{
-		Title:         getLabel(labels, "org.opencontainers.image.title"),
-		Description:   getLabel(labels, "org.opencontainers.image.description"),
-		Version:       getLabel(labels, "org.opencontainers.image.version"),
-		Revision:      getLabel(labels, "org.opencontainers.image.revision"),
-		RefName:       getLabel(labels, "org.opencontainers.image.ref.name"),
-		Source:        getLabel(labels, "org.opencontainers.image.source"),
-		URL:           getLabel(labels, "org.opencontainers.image.url"),
-		Documentation: getLabel(labels, "org.opencontainers.image.documentation"),
-		Created:       getLabel(labels, "org.opencontainers.image.created"),
-		Authors:       getLabel(labels, "org.opencontainers.image.authors"),
-		Vendor:        getLabel(labels, "org.opencontainers.image.vendor"),
-		Licenses:      getLabel(labels, "org.opencontainers.image.licenses"),
-	}
-
-	return info, nil
-}
-
-// getCurrentContainerID tries to determine the current container ID
-func getCurrentContainerID() (string, error) {
-	// Method 1: Try reading from /proc/self/cgroup (works in most containers)
-	if data, err := os.ReadFile("/proc/self/cgroup"); err == nil {
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "docker") {
-				parts := strings.Split(line, "/")
-				if len(parts) > 0 {
-					containerID := parts[len(parts)-1]
-					if len(containerID) >= 12 {
-						return containerID, nil
-					}
-				}
-			}
-		}
-	}
-
-	// Method 2: Try reading from hostname (works if hostname is container ID)
-	if hostname, err := os.Hostname(); err == nil && len(hostname) >= 12 {
-		return hostname, nil
-	}
-
-	// Method 3: Try environment variables that might contain container ID
-	if containerID := os.Getenv("HOSTNAME"); containerID != "" && len(containerID) >= 12 {
-		return containerID, nil
-	}
-
-	return "", fmt.Errorf("could not determine container ID")
-}
-
-// getLabel safely gets a label value from the labels map
-func getLabel(labels map[string]string, key string) string {
-	if value, exists := labels[key]; exists {
-		return value
-	}
-	return ""
-}
-
-// getMetadataFromEnv reads metadata from environment variables (fallback)
+// getMetadataFromEnv reads metadata from environment variables
 func getMetadataFromEnv() OCIImageInfo {
 	return OCIImageInfo{
 		Title:         getEnvWithDefault("OCI_IMAGE_TITLE", ""),
